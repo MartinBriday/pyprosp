@@ -213,4 +213,4 @@ def is_documented_by(original):
 
 @is_documented_by(LP_format_input_data)
 def LePhare_format_input_data(data, sn_z, filters=["sdss.u", "sdss.g", "sdss.r", "sdss.i", "sdss.z"], sn_name=None):
-    return LP_format_input_data(data=data, sn_z=sn_z, filters=filters, sn_name=sn_name).iloc[0]
+    return {"serie":LP_format_input_data(data=data, sn_z=sn_z, filters=filters, sn_name=sn_name).iloc[0]}
