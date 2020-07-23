@@ -18,12 +18,12 @@ class Prospector():
         """
         return
     
-    def set_data(self, phot=None, spec=None, z=None, name=None):
+    def set_data(self, phot=None, spec=None, unit="Hz", z=None, name=None):
         """
         
         """
-        self._phot_in = io.load_phot(phot)
-        self._spec_in = io.load_spec(spec)
+        self._phot_in = io.load_phot(phot=phot, unit=unit)
+        self._spec_in = io.load_spec(spec=spec, unit=unit)
         self._z = z
         self._name = name
         if self.has_phot_in():
@@ -60,7 +60,7 @@ class Prospector():
         if self.has_spec_in:
             self._obs.update({"wavelength":self.spec_in["lbda"],
                               "spectrum":self.spec_in["flux"],
-                              "unc":self.spec_in["flux.err"]})
+                              "unc":self.spec_in["flux.err"] if "flux.err" in self.spec_in.keys() else None})
         self._obs = fix_obs(self._obs)
         
     def build_model(self):

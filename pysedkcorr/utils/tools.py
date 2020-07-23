@@ -147,3 +147,52 @@ def flux_hz_to_aa(flux, wavelength):
     float or array
     """
     return flux / (wavelength**2 / constants.c.to("AA/s").value)
+
+def convert_flux_unit(flux, unit_in, unit_out, wavelength=None):
+    """
+    Convert fluxes' unit.
+    Available units are:
+        - "Hz": erg/s/cm2/Hz
+        - "AA": erg/s/cm2/AA
+        - "mgy": maggies
+        - "Jy": Jansky
+    
+    Parameters
+    ----------
+    flux : [float or array]
+        Flux(es) to convert.
+    
+    unit_in : [string]
+        Input flux unit.
+        Must be either "Hz", "AA", "mgy" or "Jy".
+    
+    unit_out : [string]
+        Desired output flux unit.
+        Must be either "Hz", "AA", "mgy" or "Jy".
+    
+    wavelength : [string]
+        Wavelengths corresponding to the given fluxes.
+        Not necessary in every conversions.
+        Default is None.
+    
+    
+    Returns
+    -------
+    float or array
+    """
+    if unit_in == unit_out:
+        return flux
+    
+    _flux = np.atleast(flux).copy()
+    _flux = _flux[0] if len(_flux) == 1 else _flux
+    if unit_in == "AA":
+        _flux = flux_aa_to_hz(flux=_flux, wavelength=wavelength)
+    elif unit_in in ["mgy", "Jy"]:
+        _flux *= 1e-23 * (3631 if unit_in == "mgy" else 1)
+    
+    if unit_out == "AA":
+        return flux_hz_to_aa(flux=_flux, wavelength=wavelength)
+    elif unit_out in ["mgy", "Jy"]:
+        _flux *= 1e23
+        return _flux / 3631 if unit_out == "mgy" else _flux
+    return _flux
