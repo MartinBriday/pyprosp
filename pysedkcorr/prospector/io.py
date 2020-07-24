@@ -28,7 +28,7 @@ def keys_to_filters(keys):
     -------
     list(string)
     """
-    return [k for k in keys if k+".err" in keys]
+    return np.array([k for k in keys if k+".err" in keys])
     
 def filters_to_pysed(filters):
     """
@@ -45,7 +45,7 @@ def filters_to_pysed(filters):
     -------
     list(string)
     """
-    return [_DEFAULT_FILTER_CONFIG[_filt.split(".")[0]][_filt.split(".")[1]] for _filt in np.atleast_1d(filters)]
+    return np.array([_DEFAULT_FILTER_CONFIG[_filt.split(".")[0]][_filt.split(".")[1]] for _filt in np.atleast_1d(filters)])
 
 def pysed_to_filters(filters):
     """
@@ -61,9 +61,9 @@ def pysed_to_filters(filters):
     -------
     list(string)
     """
-    return [_inst+"."+_band for _inst, _instv in _DEFAULT_FILTER_CONFIG.items()
-                            for _band, _bandv in _instv.items() 
-                            for _filt in filters if _filt==_bandv ]
+    return np.array([_inst+"."+_band for _inst, _instv in _DEFAULT_FILTER_CONFIG.items()
+                                     for _band, _bandv in _instv.items()
+                                     for _filt in filters if _filt==_bandv ])
 
 def load_phot(phot, unit):
     """
@@ -92,14 +92,15 @@ def load_phot(phot, unit):
         return phot
     
     from sedpy.observate import load_filters
-    _filters = keys_to_filters(_phot.keys())
-    _phot = [float(_phot[_filt]) for _filt in _filters]
-    _dphot = [float(_phot[_filt+".err"]) for _filt in _filters]
-    _lbda = [_filt.wave_average for _filt in load_filters(_filters)]
+    _data = phot.copy()
+    _filters = keys_to_filters(_data.keys())
+    _phot = np.array([float(_data[_filt]) for _filt in _filters])
+    _dphot = np.array([float(_data[_filt+".err"]) for _filt in _filters])
+    _lbda = np.array([_filt.wave_effective for _filt in load_filters(filters_to_pysed(_filters))])
     if unit == "mag":
         _phot, _dphot = tools.mag_to_flux(_phot, _dphot, _lbda, inhz=True)
         unit = "Hz"
-    _phot, _dphot = tools.convert_flux_unit([_phot, _dphot], unit, "mgy")
+    _phot, _dphot = tools.convert_flux_unit([_phot, _dphot], unit, "mgy", _lbda)
     _out = {_filt:_phot[ii] for ii, _filt in enumerate(_filters)}
     _out.update({_filt+".err":_dphot[ii] for ii, _filt in enumerate(_filters)})
     return _out
@@ -130,10 +131,11 @@ def load_spec(spec, unit):
     if spec is None:
         return spec
     
-    _lbda = np.array(spec["lbda"])
-    _spec = np.array(spec["flux"])
+    _data = spec.copy()
+    _lbda = np.array(_data["lbda"])
+    _spec = np.array(_data["flux"])
     try:
-        _dspec = np.array(spec["flux.err"])
+        _dspec = np.array(_data["flux.err"])
     except:
         _dspec = None
     
@@ -144,7 +146,7 @@ def load_spec(spec, unit):
     _out = {"lbda":_lbda, "flux":_spec}
     
     if _dspec is not None:
-        _out.update("flux.err":tools.convert_flux_unit(_dspec, unit, "mgy"))
+        _out["flux.err"] = tools.convert_flux_unit(_dspec, unit, "mgy")
     
     return _out
     

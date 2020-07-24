@@ -183,7 +183,7 @@ def convert_flux_unit(flux, unit_in, unit_out, wavelength=None):
     if unit_in == unit_out:
         return flux
     
-    _flux = np.atleast(flux).copy()
+    _flux = np.atleast_1d(flux).copy()
     _flux = _flux[0] if len(_flux) == 1 else _flux
     if unit_in == "AA":
         _flux = flux_aa_to_hz(flux=_flux, wavelength=wavelength)

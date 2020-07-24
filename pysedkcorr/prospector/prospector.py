@@ -12,11 +12,12 @@ class Prospector():
     
     """
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         """
         
         """
-        return
+        if kwargs != {}:
+            self.set_data(**kwargs)
     
     def set_data(self, phot=None, spec=None, unit="Hz", z=None, name=None):
         """
@@ -53,20 +54,30 @@ class Prospector():
         self._obs = {"filters":load_filters(io.filters_to_pysed(self._filters)) if self.has_phot_in else None,
                      "zspec":self.z}
         ### Photometry ###
-        if self.has_phot_in:
-            self._obs.update({"maggies":[self.phot_in[_filt] for _filt in self.filters],
-                              "maggies_unc":[self.phot_in[_filt+".err"] for _filt in self.filters]})
+        if self.has_phot_in():
+            self._obs.update({"maggies":np.array([self.phot_in[_filt] for _filt in self.filters]),
+                              "maggies_unc":np.array([self.phot_in[_filt+".err"] for _filt in self.filters])})
         ### Spectrometry ###
-        if self.has_spec_in:
-            self._obs.update({"wavelength":self.spec_in["lbda"],
-                              "spectrum":self.spec_in["flux"],
-                              "unc":self.spec_in["flux.err"] if "flux.err" in self.spec_in.keys() else None})
+        if self.has_spec_in():
+            self._obs.update({"wavelength":np.array(self.spec_in["lbda"]),
+                              "spectrum":np.array(self.spec_in["flux"]),
+                              "unc":np.array(self.spec_in["flux.err"]) if "flux.err" in self.spec_in.keys() else None})
         self._obs = fix_obs(self._obs)
         
-    def build_model(self):
+    def build_model(self, model=None):
         """
         
         """
+        if model is not None:
+            self._model = model
+            return
+        
+        from prospect.models.sedmodel import SedModel
+        from prospect.models.templates import TemplateLibrary
+        _model = {}
+        
+        self._model = SedModel(_model)
+        
     
     def build_sps(self, zcontinuous=1, sps=None):
         """
@@ -93,12 +104,16 @@ class Prospector():
         -------
         Void
         """
-        if self.run_params["model_params"] == "parametric_sfh":
+        if sps is not None:
+            self._sps = sps
+            return
+        
+        if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
             from prospect.sources import CSPSpecBasis
-            self._sps = CSPSpecBasis(zcontinuous=self.run_params["zcontinuous"]) if sps is None else sps
+            self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
         else:
             from prospect.sources import FastStepBasis
-            self._sps = FastStepBasis(zcontinuous=self.run_params["zcontinuous"]) if sps is None else sps
+            self._sps = FastStepBasis(zcontinuous=zcontinuous)
     
     
     #-------------------#
