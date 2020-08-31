@@ -64,7 +64,7 @@ class Prospector():
                               "unc":np.array(self.spec_in["flux.err"]) if "flux.err" in self.spec_in.keys() else None})
         self._obs = fix_obs(self._obs)
         
-    def build_model(self, model=None):
+    def build_model(self, model=None, templates=None):
         """
         
         """
@@ -74,10 +74,45 @@ class Prospector():
         
         from prospect.models.sedmodel import SedModel
         from prospect.models.templates import TemplateLibrary
+        
         _model = {}
         
         self._model = SedModel(_model)
+    
+    @staticmethod
+    def describe_templates(templates=None):
+        """
+        Describe the prospector prepackaged parameter sets.
         
+        Parameters
+        ----------
+        templates : [string or list(string) or None]
+            Template choice.s for which you ask for description.
+            Can be one template, or a list.
+            If "*" or "all" is given, every available templates will be described.
+            Default is None.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from prospect.models.templates import TemplateLibrary
+        
+        print("# ======================= #\n#   Availbale templates   #\n# ======================= #\n")
+        TemplateLibrary.show_contents()
+        
+        if templates is not None and not np.all([_t not in TemplateLibrary._descriptions.keys() for _t in np.atleast_1d(templates)]):
+            if templates in ["*", "all"]:
+                templates = TemplateLibrary._descriptions.keys()
+            print("# ========================= #\n#   Detailed descriptions   #\n# ========================= #\n")
+            for _t in np.atleast_1d(templates):
+                if _t not in TemplateLibrary._descriptions.keys():
+                    continue
+                dash_string = "".join(["-"]*(len(_t)+6))
+                print("+{}+\n|   {}   |\n+{}+".format(dash_string, _t, dash_string))
+                TemplateLibrary.describe(_t)
+                print("\n")
     
     def build_sps(self, zcontinuous=1, sps=None):
         """
