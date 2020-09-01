@@ -71,6 +71,11 @@ class Prospector():
         
         Parameters
         ----------
+        model :  [prospect.models.sedmodel.SedModel or dict]
+            Can load an already existing prospector compatible 'model' SedModel.
+            Can update a SedModel compatible 'model' dictionary before to create the SedModel on it.
+            Default is None.
+        
         templates : [string or list(string) or None]
             Prospector prepackaged parameter set(s) to load.
             Can be one template, or a list.
@@ -78,11 +83,6 @@ class Prospector():
         
         Options
         -------
-        model :  [prospect.models.sedmodel.SedModel or dict]
-            Can load an already existing prospector compatible 'model' SedModel.
-            Can update a SedModel compatible 'model' dictionary before to create the SedModel on it.
-            Default is None.
-        
         verbose : [bool]
             If True, print information.
             Default is False.
@@ -108,11 +108,8 @@ class Prospector():
             if _t in TemplateLibrary._descriptions.keys():
                 _model.update(TemplateLibrary[_t])
         for _p, _pv in _model.items():
-            try:
-                if _pv["prior"].__module__ != priors.__name__:
-                    _pv["prior"] = self._build_prior_(_pv["prior"])
-            except(AttributeError):
-                pass
+            if type(_pv["prior"]) == dict:
+                _pv["prior"] = self._build_prior_(_pv["prior"])
         
         if verbose:
             print("# ================= #\n#   Current model   #\n# ================= #\n")
@@ -159,8 +156,8 @@ class Prospector():
                     if _k is not in _model[_p].keys():
                         warnings.warn("'{}' is not included in '{}' model parameters.".format(_k, _p))
                         _pv.pop(_k)
-                    if _k == "prior":
-                        _pv[_k] = self._build_prior_(_kv)
+                    if _k == "prior" and type(_kv) == dict:
+                        _kv = self._build_prior_(_kv)
                 _model[_p].update(_c)
         
         #Removing
@@ -176,7 +173,7 @@ class Prospector():
         self._model = SedModel(_model)
     
     @staticmethod
-    def _build_prior_(prior):
+    def _build_prior_(prior, verbose=False):
         """
         Build and return a prospector SedModel compatible prior.
         
@@ -193,6 +190,13 @@ class Prospector():
         from prospect.models import priors
         _name = prior.pop("name")
         return eval("priors.{}".format(_name))(**prior)
+    
+    @staticmethod
+    def describe_priors(prior):
+        """
+        
+        """
+        
     
     @staticmethod
     def describe_templates(templates=None):
