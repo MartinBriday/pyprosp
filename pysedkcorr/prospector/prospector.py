@@ -4,7 +4,8 @@ import pandas
 import time
 import sys
 import os
-import warnings
+from warnings import warn
+from pprint import pprint
 
 from . import io
 
@@ -31,7 +32,7 @@ class Prospector():
         if self.has_phot_in():
             self._filters = io.keys_to_filters(self.phot_in.keys())
     
-    def build_obs(self, obs=None):
+    def build_obs(self, obs=None, verbose=False):
         """
         Build a dictionary containing observations in a prospector compatible format.
         
@@ -40,6 +41,10 @@ class Prospector():
         obs : [dict]
             Can load an already existing prospector compatible 'obs' dictionary.
             Default is None.
+        
+        verbose : [bool]
+            If True, print the built observation dictionary.
+            Default is False.
         
         
         Returns
@@ -64,8 +69,10 @@ class Prospector():
                               "spectrum":np.array(self.spec_in["flux"]),
                               "unc":np.array(self.spec_in["flux.err"]) if "flux.err" in self.spec_in.keys() else None})
         self._obs = fix_obs(self._obs)
+        if verbose:
+            pprint(self.obs)
         
-    def build_model(self, model=None, templates=None, verbose=False):
+    def build_model(self, model=None, templates=None, verbose=False, describe=False):
         """
         Build the model parameters to fit on measurements.
         
@@ -84,7 +91,11 @@ class Prospector():
         Options
         -------
         verbose : [bool]
-            If True, print information.
+            If True, print the built model.
+            Default is False.
+        
+        describe : [bool]
+            If True, print the description for any used SED model template and not native prior.
             Default is False.
         
         
@@ -94,30 +105,33 @@ class Prospector():
         """
         from prospect.models.sedmodel import SedModel
         from prospect.models.templates import TemplateLibrary
-        from prospect.models import priors
         
         if type(model) is SedModel:
             self._model = model
             return
         
-        if verbose:
+        if describe:
             self.describe_templates(templates=templates)
         
         _model = {} if model is None else model
         for _t in np.atleast_1d(templates):
             if _t in TemplateLibrary._descriptions.keys():
                 _model.update(TemplateLibrary[_t])
+        _describe_priors = []
         for _p, _pv in _model.items():
-            if type(_pv["prior"]) == dict:
+            if "prior" in _pv.keys() and type(_pv["prior"]) == dict:
+                _describe_priors.append(_pv["prior"])
                 _pv["prior"] = self._build_prior_(_pv["prior"])
+        if describe and len(_describe_priors) > 0:
+            self.describe_priors(_describe_priors)
         
         if verbose:
-            print("# ================= #\n#   Current model   #\n# ================= #\n")
-            print(_model)
+            print("\n# =============== #\n#   Built model   #\n# =============== #\n")
+            pprint(_model)
         
         self._model = SedModel(_model)
     
-    def modify_model(self, changes=None, removing=None, verbose=False):
+    def modify_model(self, changes=None, removing=None, verbose=False, describe=False):
         """
         Apply changes on the loaded model.
         
@@ -135,7 +149,11 @@ class Prospector():
         Options
         -------
         verbose : [bool]
-            If True, print information.
+            If True, print the SED model before and after modifications.
+            Default is False.
+        
+        describe : [bool]
+            If True, print the description for any used not native prior.
             Default is False.
         
         
@@ -143,37 +161,45 @@ class Prospector():
         -------
         Void
         """
+        from prospect.models.sedmodel import SedModel
+        
         _model = self.model.config_dict
         if verbose:
-            print("# ================== #\n#   Previous model   #\n# ================== #\n")
-            print(_model)
+            print("\n# ================== #\n#   Previous model   #\n# ================== #\n")
+            pprint(_model)
         
         #Changes
+        _describe_priors = []
         if changes is not None:
             _changes = changes.copy()
             for _p, _pv in _changes.items():
                 for _k, _kv in _pv.items():
-                    if _k is not in _model[_p].keys():
-                        warnings.warn("'{}' is not included in '{}' model parameters.".format(_k, _p))
+                    if _k not in _model[_p].keys():
+                        warn("'{}' is not included in '{}' model parameters.".format(_k, _p))
                         _pv.pop(_k)
                     if _k == "prior" and type(_kv) == dict:
+                        _describe_priors.append(_kv)
                         _kv = self._build_prior_(_kv)
-                _model[_p].update(_c)
+                _model[_p].update(_pv)
+        if describe and len(_describe_priors) > 0:
+            self.describe_priors(_describe_priors)
         
         #Removing
         if removing is not None:
             for _t in np.atleast_1d(removing):
                 if _t in _model.keys():
                     _model.pop(_t)
+                else:
+                    warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
         
         if verbose:
             print("\n\n\n# ============= #\n#   New model   #\n# ============= #\n")
-            print(_model)
+            pprint(_model)
         
         self._model = SedModel(_model)
     
     @staticmethod
-    def _build_prior_(prior, verbose=False):
+    def _build_prior_(priors, verbose=False):
         """
         Build and return a prospector SedModel compatible prior.
         
@@ -181,22 +207,54 @@ class Prospector():
         ----------
         prior : [dict]
             Dictionary containing every required parameters to build a prior object.
+        
+        Options
+        -------
+        verbose : [bool]
+            If True, print information about the given prior to build.
+            Default is False.
             
             
         Returns
         -------
         prospect.models.priors.[chosen prior]
         """
-        from prospect.models import priors
-        _name = prior.pop("name")
-        return eval("priors.{}".format(_name))(**prior)
+        from prospect.models import priors as p_priors
+        if verbose:
+            self.describe_priors(priors=priors)
+        _priors = priors.copy()
+        _name = _priors.pop("name")
+        return eval("p_priors.{}".format(_name))(**_priors)
     
     @staticmethod
-    def describe_priors(prior):
+    def describe_priors(priors=None):
         """
         
         """
-        
+        from prospect.models import priors as p_priors
+        print("\n# ====================== #\n#   Prior descriptions   #\n# ====================== #\n")
+        _prior_list = p_priors.__all__.copy()
+        _prior_list.remove("Prior")
+        print("Available priors: {}.\n".format(", ".join(_prior_list)))
+        if priors is not None:
+            print("(Required parameters must contained in addition with a 'name' parameter in a dictionary to correctly build the prior, \n"+
+                  " for example, try to describe 'priors={'name':'Normal', 'mean':0., 'sigma':1.}').\n")
+            if priors in ["*", "all"]:
+                priors = _prior_list
+            _priors = np.atleast_1d(priors)
+            for _p in _priors:
+                _name = _p.pop("name") if type(_p) == dict else _p
+                if _name not in _prior_list:
+                    warn("'{}' is not an available prior.".format(_name))
+                dash_string = "".join(["-"]*(len(_name)+6))
+                print("+{}+\n|   {}   |\n+{}+".format(dash_string, _name, dash_string))
+                _pdoc = eval("p_priors."+_name).__doc__
+                _pdoc = _pdoc.replace(":param", "-")
+                if type(_p) == dict:
+                    for _pp in eval("p_priors."+_name).prior_params:
+                        _pdoc = _pdoc.replace(_pp+":", _pp+": (your input is: {})".format(_p[_pp]) if _pp in _p.keys()
+                                                  else _pp+": (!!!WARNING!!! No input!)")
+                print(_pdoc)
     
     @staticmethod
     def describe_templates(templates=None):
@@ -218,13 +276,13 @@ class Prospector():
         """
         from prospect.models.templates import TemplateLibrary
         
-        print("# ======================= #\n#   Availbale templates   #\n# ======================= #\n")
+        print("\n# ======================= #\n#   Availbale templates   #\n# ======================= #\n")
         TemplateLibrary.show_contents()
         
         if templates in ["*", "all"]:
             templates = list(TemplateLibrary._descriptions.keys())
         if templates is not None and not np.all([_t not in TemplateLibrary._descriptions.keys() for _t in np.atleast_1d(templates)]):
-            print("\n\n\n# ========================= #\n#   Detailed descriptions   #\n# ========================= #\n")
+            print("\n\n\n# ========================= #\n#   Template descriptions   #\n# ========================= #\n")
             for _t in np.atleast_1d(templates):
                 if _t in TemplateLibrary._descriptions.keys():
                     dash_string = "".join(["-"]*(len(_t)+6))
