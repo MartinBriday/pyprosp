@@ -64,6 +64,7 @@ class Prospector():
             self._obs.update({"maggies":np.array([self.phot_in[_filt] for _filt in self.filters]),
                               "maggies_unc":np.array([self.phot_in[_filt+".err"] for _filt in self.filters])})
         ### Spectrometry ###
+        self._obs["wavelength"] = None
         if self.has_spec_in():
             self._obs.update({"wavelength":np.array(self.spec_in["lbda"]),
                               "spectrum":np.array(self.spec_in["flux"]),
@@ -121,9 +122,12 @@ class Prospector():
         for _p, _pv in _model.items():
             if "prior" in _pv.keys() and type(_pv["prior"]) == dict:
                 _describe_priors.append(_pv["prior"])
-                _pv["prior"] = self._build_prior_(_pv["prior"])
+                _pv["prior"] = self.build_prior(_pv["prior"])
         if describe and len(_describe_priors) > 0:
             self.describe_priors(_describe_priors)
+        
+        if self.has_z():
+            _model["zred"].update({"init":self.obs["zspec"], "isfree":False})
         
         if verbose:
             print("\n# =============== #\n#   Built model   #\n# =============== #\n")
@@ -137,9 +141,9 @@ class Prospector():
         
         Parameters
         ----------
-        params : [dict or None]
+        changes : [dict or None]
             Dictionary containing the desired changes for the desired parameters.
-            As an example, params={"zred"={"init"=2.}}) will change the initial value of the 'zred parameter, without changing anything else.
+            As an example, changes={"zred"={"init"=2.}}) will change the initial value of the 'zred' parameter, without changing anything else.
             Default is None.
         
         removing : [string or list(string) or None]
@@ -173,13 +177,16 @@ class Prospector():
         if changes is not None:
             _changes = changes.copy()
             for _p, _pv in _changes.items():
+                if _p not in _model.keys():
+                     warn("'{}' is not included in model parameters.".format(_p))
+                     _pv.pop(_p)
                 for _k, _kv in _pv.items():
                     if _k not in _model[_p].keys():
                         warn("'{}' is not included in '{}' model parameters.".format(_k, _p))
-                        _pv.pop(_k)
+                        _kv.pop(_k)
                     if _k == "prior" and type(_kv) == dict:
                         _describe_priors.append(_kv)
-                        _kv = self._build_prior_(_kv)
+                        _kv = self.build_prior(_kv)
                 _model[_p].update(_pv)
         if describe and len(_describe_priors) > 0:
             self.describe_priors(_describe_priors)
@@ -199,7 +206,7 @@ class Prospector():
         self._model = SedModel(_model)
     
     @staticmethod
-    def _build_prior_(priors, verbose=False):
+    def build_prior(priors, verbose=False):
         """
         Build and return a prospector SedModel compatible prior.
         
@@ -246,6 +253,7 @@ class Prospector():
                 _name = _p.pop("name") if type(_p) == dict else _p
                 if _name not in _prior_list:
                     warn("'{}' is not an available prior.".format(_name))
+                    continue
                 dash_string = "".join(["-"]*(len(_name)+6))
                 print("+{}+\n|   {}   |\n+{}+".format(dash_string, _name, dash_string))
                 _pdoc = eval("p_priors."+_name).__doc__
@@ -326,6 +334,87 @@ class Prospector():
             from prospect.sources import FastStepBasis
             self._sps = FastStepBasis(zcontinuous=zcontinuous)
     
+    def run_fit(self, which="dynesty", obs=None, model=None, sps=None, run_params={}, verbose=False):
+        """
+        
+        """
+        from prospect.fitting import lnprobfn
+        from prospect.fitting import fit_model
+        
+        _model = self.model if model is None else model
+        _obs = self.obs if obs is None else obs
+        _sps = self.sps if sps is None else sps
+        
+        _run_params = {"optimize":False, "emcee":False, "dynesty":False}
+        _run_params[which] = True
+        _run_params.update(run_params)
+        
+        self._fit_output = fit_model(obs=_obs, model=_model, sps=_sps, lnprobfn=lnprobfn, **_run_params)
+        
+        if verbose:
+            print("Done '{}' in {:.0f}s.".format(which, self.fit_output["sampling"][1]))
+    
+    @staticmethod
+    def describe_run_parameters(which="*"):
+        """
+        Describe the fitter meta-parameters.
+        
+        Parameters
+        ----------
+        which : [string or list(string)]
+            Fitter choice between:
+                - "optimize"
+                - "emcee"
+                - "dynesty"
+            Can be a list of them.
+            "*" or "all" automaticaly describe the three of them.
+            Default is "*".
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from prospect.fitting.fitting import run_emcee, run_dynesty
+        from prospect.fitting.fitting import run_minimize as run_optimize
+        _fitters = ["optimize", "emcee", "dynesty"]
+        _rejected_params = ["obs", "sps", "model", "noise", "lnprobfn", "hfile"]
+        _list_fitter = np.atleast_1d(which) if which not in ["*", "all"] else _fitters
+        print("\n# ================================== #\n#   Running parameters description   #\n# ================================== #\n")
+        for _f in _list_fitter:
+            if _f not in _fitters:
+                warn("'{}' is not a know fitter.".format(_f))
+                continue
+            dash_string = "".join(["-"]*(len(_f)+6))
+            print("+{}+\n|   {}   |\n+{}+".format(dash_string, _f, dash_string))
+            _doc = eval("run_"+_f).__doc__.split(":param ")
+            _doc = [_d for _d in _doc if _d.split(":")[0] not in _rejected_params and len(_d.split(":")[0].split(" "))==1]
+            _doc[-1] = _doc[-1].split("Returns")[0]
+            print("".join(["    "]+_doc))
+    
+    def write(self):
+        """
+        
+        """
+        return
+    
+    @staticmethod
+    def read(self):
+        """
+        
+        """
+        return
+    
+    def show(self):
+        """
+        
+        """
+        return
+            
+        
+        
+        
+    
     
     #-------------------#
     #   Properties      #
@@ -356,6 +445,10 @@ class Prospector():
     def z(self):
         """ Input redshift """
         return self._z
+    
+    def has_z(self):
+        """ Test that z is not void """
+        return self.z is not None
     
     @property
     def name(self):
@@ -402,3 +495,14 @@ class Prospector():
     def has_model(self):
         """ Test that 'model' is not void """
         return self.model is not None
+    
+    @property
+    def fit_output(self):
+        """ Fitter output (dictionary with two keys, 'optimization' and 'sampling') """
+        if not hasattr(self,"_fit_output"):
+            self._fit_output = None
+        return self._fit_output
+    
+    def has_fit_output(self):
+        """ Test that 'fit_output' is not void """
+        return self.fit_output is not None
