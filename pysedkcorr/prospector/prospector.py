@@ -11,19 +11,97 @@ from . import io
 
 class Prospector():
     """
-    
+    This class use the python package 'prospector' to fit the SED.
     """
     
     def __init__(self, **kwargs):
         """
+        Initialization.
+        Can run 'set_data'.
         
+        Options
+        -------
+        phot : [dict or pandas.DataFrame or None]
+            Photometry to be fitted.
+            The keys must be on the format instrument.band and instrument.band.err (e.g. sdss.u, sdss.u.err, ps1.g, ps1.g.err, ...).
+            An uncertainty is required for every given band.
+            Default is None.
+        
+        spec : [dict or pandas.DataFrame or None]
+            Spectrometry to be fitted.
+            The given data must include wavelength and spectrum measurement under the keys 'lbda' and 'spec' respectively.
+            An uncertainty on spectrum can be given under the key 'spec.err'.
+            Default is None.
+        
+        unit : [string]
+            Unit of the given measurements.
+            Can be:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitudes
+            Default is "Hz".
+        
+        z : [float or None]
+            Redshift to be fixed during SED fitting.
+            Default is None.
+        
+        name : [string or None]
+            Studied object name to be stored as attribute.
+            Default is None.
+        
+        
+        Returns
+        -------
+        Void
         """
         if kwargs != {}:
             self.set_data(**kwargs)
     
     def set_data(self, phot=None, spec=None, unit="Hz", z=None, name=None):
         """
+        Set up input data as attributes.
+        Either 'phot' or 'spec' must be given.
         
+        Parameters
+        ----------
+        phot : [dict or pandas.DataFrame or None]
+            Photometry to be fitted.
+            The keys must be on the format instrument.band and instrument.band.err (e.g. sdss.u, sdss.u.err, ps1.g, ps1.g.err, ...).
+            An uncertainty is required for every given band.
+            Default is None.
+        
+        spec : [dict or pandas.DataFrame or None]
+            Spectrometry to be fitted.
+            The given data must include wavelength and spectrum measurement under the keys 'lbda' and 'spec' respectively.
+            An uncertainty on spectrum can be given under the key 'spec.err'.
+            Default is None.
+        
+        unit : [string]
+            Unit of the given measurements.
+            Can be:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitudes
+            Default is "Hz".
+        
+        z : [float or None]
+            Redshift to be fixed during SED fitting.
+            Default is None.
+        
+        Options
+        -------
+        name : [string or None]
+            Studied object name to be stored as attribute.
+            Default is None.
+        
+        
+        Returns
+        -------
+        Void
         """
         self._phot_in = io.load_phot(phot=phot, unit=unit)
         self._spec_in = io.load_spec(spec=spec, unit=unit)
@@ -67,8 +145,8 @@ class Prospector():
         self._obs["wavelength"] = None
         if self.has_spec_in():
             self._obs.update({"wavelength":np.array(self.spec_in["lbda"]),
-                              "spectrum":np.array(self.spec_in["flux"]),
-                              "unc":np.array(self.spec_in["flux.err"]) if "flux.err" in self.spec_in.keys() else None})
+                              "spectrum":np.array(self.spec_in["spec"]),
+                              "unc":np.array(self.spec_in["spec.err"]) if "spec.err" in self.spec_in.keys() else None})
         self._obs = fix_obs(self._obs)
         if verbose:
             pprint(self.obs)
@@ -130,7 +208,7 @@ class Prospector():
             _model["zred"].update({"init":self.obs["zspec"], "isfree":False})
         
         if verbose:
-            print("\n# =============== #\n#   Built model   #\n# =============== #\n")
+            print(self._get_box_title(title="Built model", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         self._model = SedModel(_model)
@@ -169,7 +247,7 @@ class Prospector():
         
         _model = self.model.config_dict
         if verbose:
-            print("\n# ================== #\n#   Previous model   #\n# ================== #\n")
+            print(self._get_box_title(title="Previous model", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         #Changes
@@ -200,7 +278,7 @@ class Prospector():
                     warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
         
         if verbose:
-            print("\n\n\n# ============= #\n#   New model   #\n# ============= #\n")
+            print(self._get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         self._model = SedModel(_model)
@@ -239,7 +317,7 @@ class Prospector():
         
         """
         from prospect.models import priors as p_priors
-        print("\n# ====================== #\n#   Prior descriptions   #\n# ====================== #\n")
+        print(Prospector._get_box_title(title="Prior descriptions", box="\n#=#\n#   {}   #\n#=#\n"))
         _prior_list = p_priors.__all__.copy()
         _prior_list.remove("Prior")
         print("Available priors: {}.\n".format(", ".join(_prior_list)))
@@ -254,8 +332,7 @@ class Prospector():
                 if _name not in _prior_list:
                     warn("'{}' is not an available prior.".format(_name))
                     continue
-                dash_string = "".join(["-"]*(len(_name)+6))
-                print("+{}+\n|   {}   |\n+{}+".format(dash_string, _name, dash_string))
+                print(Prospector._get_box_title(title=_name, box="\n+-+\n|   {}   |\n+-+\n"))
                 _pdoc = eval("p_priors."+_name).__doc__
                 _pdoc = _pdoc.replace(":param", "-")
                 if type(_p) == dict:
@@ -284,17 +361,16 @@ class Prospector():
         """
         from prospect.models.templates import TemplateLibrary
         
-        print("\n# ======================= #\n#   Availbale templates   #\n# ======================= #\n")
+        print(Prospector._get_box_title(title="Availbale templates", box="\n#=#\n#   {}   #\n#=#\n"))
         TemplateLibrary.show_contents()
         
         if templates in ["*", "all"]:
             templates = list(TemplateLibrary._descriptions.keys())
         if templates is not None and not np.all([_t not in TemplateLibrary._descriptions.keys() for _t in np.atleast_1d(templates)]):
-            print("\n\n\n# ========================= #\n#   Template descriptions   #\n# ========================= #\n")
+            print(Prospector._get_box_title(title="Template descriptions", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
             for _t in np.atleast_1d(templates):
                 if _t in TemplateLibrary._descriptions.keys():
-                    dash_string = "".join(["-"]*(len(_t)+6))
-                    print("+{}+\n|   {}   |\n+{}+".format(dash_string, _t, dash_string))
+                    print(Prospector._get_box_title(title=_t, box="+-+\n|   {}   |\n+-+"))
                     TemplateLibrary.describe(_t)
                     print("\n")
     
@@ -327,6 +403,7 @@ class Prospector():
             self._sps = sps
             return
         
+        self.run_params["zcontinuous"] = zcontinuous
         if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
             from prospect.sources import CSPSpecBasis
             self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
@@ -341,15 +418,17 @@ class Prospector():
         from prospect.fitting import lnprobfn
         from prospect.fitting import fit_model
         
-        _model = self.model if model is None else model
-        _obs = self.obs if obs is None else obs
-        _sps = self.sps if sps is None else sps
+        for ii in ["obs", "model", "sps"]:
+            if eval(ii) is not None:
+                eval("self.build_{0}({0})".format(ii))
         
-        _run_params = {"optimize":False, "emcee":False, "dynesty":False}
-        _run_params[which] = True
-        _run_params.update(run_params)
+        #Running parameters
+        self._run_params = {"optimize":False, "emcee":False, "dynesty":False, "zcontinuous":self.run_params["zcontinuous"]}
+        self.run_params[which] = True
+        self.run_params.update(run_params)
         
-        self._fit_output = fit_model(obs=_obs, model=_model, sps=_sps, lnprobfn=lnprobfn, **_run_params)
+        #Fit
+        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, **self.run_params)
         
         if verbose:
             print("Done '{}' in {:.0f}s.".format(which, self.fit_output["sampling"][1]))
@@ -380,30 +459,82 @@ class Prospector():
         _fitters = ["optimize", "emcee", "dynesty"]
         _rejected_params = ["obs", "sps", "model", "noise", "lnprobfn", "hfile"]
         _list_fitter = np.atleast_1d(which) if which not in ["*", "all"] else _fitters
-        print("\n# ================================== #\n#   Running parameters description   #\n# ================================== #\n")
+        print(Prospector._get_box_title(title="Running parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
         for _f in _list_fitter:
             if _f not in _fitters:
                 warn("'{}' is not a know fitter.".format(_f))
                 continue
-            dash_string = "".join(["-"]*(len(_f)+6))
-            print("+{}+\n|   {}   |\n+{}+".format(dash_string, _f, dash_string))
+            print(Prospector._get_box_title(title=_f, box="\n+-+\n|   {}   |\n+-+\n"))
             _doc = eval("run_"+_f).__doc__.split(":param ")
             _doc = [_d for _d in _doc if _d.split(":")[0] not in _rejected_params and len(_d.split(":")[0].split(" "))==1]
             _doc[-1] = _doc[-1].split("Returns")[0]
             print("".join(["    "]+_doc))
     
-    def write(self):
+    @staticmethod
+    def _get_box_title(title, box="\n#=#\n#   {}   #\n#=#\n"):
         """
+        Return the title in a custom box as a string.
         
+        Parameters
+        ----------
+        title : [string]
+            Title to prinnt in the custom box.
+        
+        box : [string]
+            Custom box format which will be adapted to the given title.
+            Must contain "{}" in which the title will be included.
+            Default is "\n#=#\n#   {}   #\n#=#\n".
+        
+        
+        Returns
+        -------
+        string
         """
-        return
+        _box = [ii.format(title) for ii in box.split("\n")]
+        _title = [_b for _b in _box if title in _b][0]
+        for ii, _b in enumerate(_box):
+            if _b != _title and _b != "" and _b is not None:
+                _box_edge = list(_b)
+                _box_edge[1] = "".join([_box_edge[1]]*(len(_title)-2))
+                _box[ii] = "".join(_box_edge)
+        return "\n".join(_box)
+    
+    def write_h5(self, savefile):
+        """
+        Save the fitting results and every fitter inputs (apart from the 'sps') in a given file.
+        
+        Parameters
+        ----------
+        savefile : [string]
+            File name in which to save the results.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from prospect.io import write_results as writer
+        writer.write_hdf5(hfile=savefile, run_params=self.run_params, model=self.model, obs=self.obs,
+                          sampler=self.fit_output["sampling"][0], optimize_result_list=self.fit_output["optimization"][0],
+                          tsample=self.fit_output["sampling"][1], toptimize=self.fit_output["optimization"][1])
     
     @staticmethod
-    def read(self):
+    def read_h5(self, filename):
         """
+        Read a file to create a Prospector object.
         
+        Parameters
+        ----------
+        filename : [string]
+            File name in which are saved the results to be read and loaded.
+        
+        
+        Returns
+        -------
+        Void
         """
-        return
+        import prospect.io.read_results as reader
+        result, obs, _ = reader.results_from(filename, dangerous=False)
     
     def show(self):
         """
@@ -495,6 +626,13 @@ class Prospector():
     def has_model(self):
         """ Test that 'model' is not void """
         return self.model is not None
+    
+    @property
+    def run_params(self):
+        """ Running parameters (dictionary) """
+        if not hasattr(self,"_run_params"):
+            self._run_params = {}
+        return self._run_params
     
     @property
     def fit_output(self):

@@ -133,9 +133,9 @@ def load_spec(spec, unit):
     
     _data = spec.copy()
     _lbda = np.array(_data["lbda"])
-    _spec = np.array(_data["flux"])
+    _spec = np.array(_data["spec"])
     try:
-        _dspec = np.array(_data["flux.err"])
+        _dspec = np.array(_data["spec.err"])
     except:
         _dspec = None
     
@@ -143,10 +143,10 @@ def load_spec(spec, unit):
         _spec, _dspec = tools.mag_to_flux(_spec, _dspec, _lbda, inhz=True)
         unit = "Hz"
     _spec = tools.convert_flux_unit(_spec, unit, "mgy")
-    _out = {"lbda":_lbda, "flux":_spec}
+    _out = {"lbda":_lbda, "spec":_spec}
     
     if _dspec is not None:
-        _out["flux.err"] = tools.convert_flux_unit(_dspec, unit, "mgy")
+        _out["spec.err"] = tools.convert_flux_unit(_dspec, unit, "mgy")
     
     return _out
     
