@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import numpy as np
 import pandas
@@ -110,14 +112,47 @@ class Prospector():
         if self.has_phot_in():
             self._filters = io.keys_to_filters(self.phot_in.keys())
     
-    def build_obs(self, obs=None, verbose=False):
+    def _set_data_from_obs(self, obs):
+        """
+        
+        """
+        for _attr, _obs_key in {"_filters":"filternames", "_z":"zspec", "_name":"name"}.items():
+            try:
+                if _attr == "_filters":
+                    self._filters = io.pysed_to_filters(self.obs["filternames"])
+                else:
+                    eval("self."+_attr) = self.obs[_obs_key]
+            except(KeyError):
+                eval("self."+_attr) = None
+                warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
+        
+        try:
+            self._phot_in = {_filt:self.obs["maggies"][ii] for ii, _filt in self.filters}
+            self._phot_in.update({_filt+".err":self.obs["maggies_unc"][ii] for ii, _filt in self.filters})
+        except(KeyError):
+            self._phot_in = None
+            warn("Cannot set 'phot_in' attribute either because there is no 'maggies' or no 'maggies_unc' in the 'obs' dictionary.")
+        except(AttributeError):
+            self._phot_in = None
+            warn("Cannot set 'phot_in' attribute because there is no 'filters' attribute.")
+        
+        try:
+            self._spec_in = {"lbda":self.obs["wavelength"], "spec":self.obs["spectrum"], "spec.err":self.obs["unc"]}
+        except(KeyError):
+            self._spec_in = None
+            warn("Cannot set '_spec_in' attribute because there is no 'wavelength', 'spectrum' and 'unc' in the 'obs' dictionary.")
+        if self.spec_in["lbda"] is None and self.spec_in["spec"] is None and self.spec_in["spec.err"]:
+            self._spec_in = None
+    
+    def build_obs(self, obs=None, verbose=False, set_data=False):
         """
         Build a dictionary containing observations in a prospector compatible format.
         
         Options
         -------
-        obs : [dict]
+        obs : [dict or None]
             Can load an already existing prospector compatible 'obs' dictionary.
+            Automatically change the attributes to the given 'obs' dictionary.
             Default is None.
         
         verbose : [bool]
@@ -131,12 +166,16 @@ class Prospector():
         """
         if obs is not None:
             self._obs = obs
+            if set_data:
+                self._set_data_from_obs(obs=self.obs)
             return
         
         from sedpy.observate import load_filters
         from prospect.utils.obsutils import fix_obs
-        self._obs = {"filters":load_filters(io.filters_to_pysed(self._filters)) if self.has_phot_in else None,
-                     "zspec":self.z}
+        self._obs = {"filters":load_filters(io.filters_to_pysed(self.filters)) if self.has_phot_in else None,
+                     "filters_name":self.filters,
+                     "zspec":self.z,
+                     "name":self.name}
         ### Photometry ###
         if self.has_phot_in():
             self._obs.update({"maggies":np.array([self.phot_in[_filt] for _filt in self.filters]),
@@ -157,11 +196,6 @@ class Prospector():
         
         Parameters
         ----------
-        model :  [prospect.models.sedmodel.SedModel or dict]
-            Can load an already existing prospector compatible 'model' SedModel.
-            Can update a SedModel compatible 'model' dictionary before to create the SedModel on it.
-            Default is None.
-        
         templates : [string or list(string) or None]
             Prospector prepackaged parameter set(s) to load.
             Can be one template, or a list.
@@ -169,6 +203,11 @@ class Prospector():
         
         Options
         -------
+        model :  [prospect.models.sedmodel.SedModel or dict or None]
+            Can load an already existing prospector compatible 'model' SedModel.
+            Can update a SedModel compatible 'model' dictionary before to create the SedModel on it.
+            Default is None.
+        
         verbose : [bool]
             If True, print the built model.
             Default is False.
@@ -374,7 +413,7 @@ class Prospector():
                     TemplateLibrary.describe(_t)
                     print("\n")
     
-    def build_sps(self, zcontinuous=1, sps=None):
+    def build_sps(self, sps=None, zcontinuous=1):
         """
         Create the appropriate sps.
         
@@ -404,6 +443,8 @@ class Prospector():
             return
         
         self.run_params["zcontinuous"] = zcontinuous
+        if not has_model():
+            raise AttributeError("You must run 'build_model first to be able automatically build the corresponding SPS.")
         if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
             from prospect.sources import CSPSpecBasis
             self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
@@ -513,15 +554,22 @@ class Prospector():
         -------
         Void
         """
+        import h5py
+        import pickle
+        
         from prospect.io import write_results as writer
         writer.write_hdf5(hfile=savefile, run_params=self.run_params, model=self.model, obs=self.obs,
                           sampler=self.fit_output["sampling"][0], optimize_result_list=self.fit_output["optimization"][0],
                           tsample=self.fit_output["sampling"][1], toptimize=self.fit_output["optimization"][1])
-    
-    @staticmethod
-    def read_h5(self, filename):
+        with h5py.File(savefile, "a") as _h5f:
+            _h5f.create_dataset("model", data=np.void(pickle.dumps(self.model)))
+            _h5f.create_dataset("sps", data=np.void(pickle.dumps(self.sps)))
+            _h5f.flush()
+        
+    @classmethod
+    def read_h5(cls, filename):
         """
-        Read a file to create a Prospector object.
+        Build and return a Prospector object from a .h5 file.
         
         Parameters
         ----------
@@ -531,10 +579,34 @@ class Prospector():
         
         Returns
         -------
-        Void
+        Prospector
         """
         import prospect.io.read_results as reader
-        result, obs, _ = reader.results_from(filename, dangerous=False)
+        
+        _this = cls()
+        
+        _result, _obs, _ = reader.results_from(filename, dangerous=False)
+        _this.build_obs(obs=_obs, verbose=False, set_data=True)
+        _this._run_params = _result["run_params"]
+        
+        with h5py.File("test.h5", "r") as _h5f:
+            try:
+                _this.build_model(model=pickle.loads(_h5f["model"][()]), verbose=False)
+            except(KeyError):
+                try:
+                    _this.build_model(model=_this._read_model(_result["model_params"]), verbose=False)
+                except:
+                    warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file, you must build it yourself.")
+            try:
+                _this.build_sps(model=pickle.loads(_h5f["sps"][()]), verbose=False)
+            except(KeyError):
+                if this.has_model():
+                    _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
+                else:
+                    warn("Cannot build the SPS as the 'model' is not built. You will have to build it yourself.")
+        
+        return _this
+        
     
     def show(self):
         """
