@@ -112,9 +112,19 @@ class Prospector():
         if self.has_phot_in():
             self._filters = io.keys_to_filters(self.phot_in.keys())
     
-    def _set_data_from_obs(self, obs):
+    def _set_data_from_obs(self, obs, verbose=True):
         """
+        Set up attributes coming from an 'obs' dictionary.
         
+        Parameters
+        ----------
+        obs : [dictionary]
+            Prospector compatible 'obs' dictionary.
+        
+        
+        Returns
+        -------
+        Void
         """
         for _attr, _obs_key in {"_filters":"filternames", "_z":"zspec", "_name":"name"}.items():
             try:
@@ -124,23 +134,27 @@ class Prospector():
                     eval("self."+_attr) = self.obs[_obs_key]
             except(KeyError):
                 eval("self."+_attr) = None
-                warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
+                if verbose:
+                    warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
         
         try:
             self._phot_in = {_filt:self.obs["maggies"][ii] for ii, _filt in self.filters}
             self._phot_in.update({_filt+".err":self.obs["maggies_unc"][ii] for ii, _filt in self.filters})
         except(KeyError):
             self._phot_in = None
-            warn("Cannot set 'phot_in' attribute either because there is no 'maggies' or no 'maggies_unc' in the 'obs' dictionary.")
+            if verbose:
+                warn("Cannot set 'phot_in' attribute either because there is no 'maggies' or no 'maggies_unc' in the 'obs' dictionary.")
         except(AttributeError):
             self._phot_in = None
-            warn("Cannot set 'phot_in' attribute because there is no 'filters' attribute.")
+            if verbose:
+                warn("Cannot set 'phot_in' attribute because there is no 'filters' attribute.")
         
         try:
             self._spec_in = {"lbda":self.obs["wavelength"], "spec":self.obs["spectrum"], "spec.err":self.obs["unc"]}
         except(KeyError):
             self._spec_in = None
-            warn("Cannot set '_spec_in' attribute because there is no 'wavelength', 'spectrum' and 'unc' in the 'obs' dictionary.")
+            if verbose:
+                warn("Cannot set '_spec_in' attribute because there is no 'wavelength', 'spectrum' and 'unc' in the 'obs' dictionary.")
         if self.spec_in["lbda"] is None and self.spec_in["spec"] is None and self.spec_in["spec.err"]:
             self._spec_in = None
     
@@ -159,6 +173,10 @@ class Prospector():
             If True, print the built observation dictionary.
             Default is False.
         
+        set_data : [bool]
+            If 'obs' is not None, set to True if you want to extract and set attributes from the given 'obs' dictionary.
+            Default is False.
+        
         
         Returns
         -------
@@ -167,13 +185,12 @@ class Prospector():
         if obs is not None:
             self._obs = obs
             if set_data:
-                self._set_data_from_obs(obs=self.obs)
+                self._set_data_from_obs(obs=self.obs, verbose=verbose)
             return
         
         from sedpy.observate import load_filters
         from prospect.utils.obsutils import fix_obs
         self._obs = {"filters":load_filters(io.filters_to_pysed(self.filters)) if self.has_phot_in else None,
-                     "filters_name":self.filters,
                      "zspec":self.z,
                      "name":self.name}
         ### Photometry ###
@@ -350,10 +367,239 @@ class Prospector():
         _name = _priors.pop("name")
         return eval("p_priors.{}".format(_name))(**_priors)
     
+    def build_sps(self, sps=None, zcontinuous=1):
+        """
+        Create the appropriate sps.
+        
+        Parameters
+        ----------
+        zcontinuous : [float]
+            python-fsps parameter controlling how metallicity interpolation of the SSPs is acheived :
+                - 0: use discrete indices (controlled by parameter "zmet")
+                - 1: linearly interpolate in log Z/Z_\sun to the target metallicity (the parameter "logzsol")
+                - 2: convolve with a metallicity distribution function at each age (the MDF is controlled by the parameter "pmetals")
+            A value of '1' is recommended.
+            Default is 1.
+        
+        Options
+        -------
+        sps : [sps instance]
+            If not None, this will set the 'sps' attribute with the given sps.
+            Default is None.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        if sps is not None:
+            self._sps = sps
+            return
+        
+        self.run_params["zcontinuous"] = zcontinuous
+        if not has_model():
+            raise AttributeError("You must run 'build_model first to be able automatically build the corresponding SPS.")
+        if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
+            from prospect.sources import CSPSpecBasis
+            self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
+        else:
+            from prospect.sources import FastStepBasis
+            self._sps = FastStepBasis(zcontinuous=zcontinuous)
+    
+    def run_fit(self, which="dynesty", run_params={}, savefile=None, verbose=False):
+        """
+        Run the SED fitting.
+        
+        Parameters
+        ----------
+        which : [bool]
+            SED fitting method choice between:
+                - "dynesty"
+                - "emcee"
+                - "optimize"
+            Default is "dynesty".
+        
+        Options
+        -------
+        run_params : [dict]
+            Dictionary containing running parameters associated to the chosen fitting method.
+            You can look at more information for this input with the function 'describe_run_parameters'.
+            Default is {} (meaning that the default values for every parameters are applied).
+        
+        savefile : [string or None]
+            If a file name is given, the fitting results are saved in this file.
+            Must end with ".h5".
+            Default is None.
+        
+        verbose : [bool]
+            If True, print out the time taken by the SED fitting.
+            Default is False.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from prospect.fitting import lnprobfn
+        from prospect.fitting import fit_model
+        
+        #Running parameters
+        self._run_params = {"optimize":False, "emcee":False, "dynesty":False, "zcontinuous":self.run_params["zcontinuous"]}
+        self.run_params[which] = True
+        self.run_params.update(run_params)
+        
+        #Fit
+        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, **self.run_params)
+        
+        if savefile is not None:
+            self.write_h5(savefile=savefile)
+        
+        if verbose:
+            print("Done '{}' in {:.0f}s.".format(which, self.fit_output["sampling"][1]))
+    
+    def write_h5(self, savefile):
+        """
+        Save the fitting results and every fitter inputs (apart from the 'sps') in a given file.
+        
+        Parameters
+        ----------
+        savefile : [string]
+            File name in which to save the results.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        import h5py
+        import pickle
+        
+        from prospect.io import write_results as writer
+        writer.write_hdf5(hfile=savefile, run_params=self.run_params, model=self.model, obs=self.obs,
+                          sampler=self.fit_output["sampling"][0], optimize_result_list=self.fit_output["optimization"][0],
+                          tsample=self.fit_output["sampling"][1], toptimize=self.fit_output["optimization"][1])
+        with h5py.File(savefile, "a") as _h5f:
+            _h5f.create_dataset("model", data=np.void(pickle.dumps(self.model)))
+            _h5f.create_dataset("sps", data=np.void(pickle.dumps(self.sps)))
+            _h5f.flush()
+        
+    @classmethod
+    def read_h5(cls, filename, verbose=True):
+        """
+        Build and return a Prospector object from a .h5 file.
+        
+        Parameters
+        ----------
+        filename : [string]
+            File name in which are saved the results to be read and loaded.
+        
+        Options
+        -------
+        verbose : [bool]
+            If True, allow the warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        Prospector
+        """
+        import prospect.io.read_results as reader
+        import pickle
+        
+        _this = cls()
+        
+        _result, _obs, _ = reader.results_from(filename, dangerous=False)
+        _this.build_obs(obs=_obs, verbose=verbose, set_data=True)
+        _this._run_params = _result["run_params"]
+        
+        with h5py.File("test.h5", "r") as _h5f:
+            try:
+                _this.build_model(model=pickle.loads(_h5f["model"][()]), verbose=False)
+            except(KeyError):
+                try:
+                    _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()}
+                              for _p in _result["model_params"]}
+                    _this.build_model(model=_this._read_model_params(_result["model_params"]), verbose=False)
+                    if verbose:
+                        warn("The model has been built with dependance functions, if any, with their default inputs.")
+                except:
+                    if verbose:
+                        warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
+                             "there is an error building it from the saved 'model_params', you must build it yourself.")
+            try:
+                _this.build_sps(model=pickle.loads(_h5f["sps"][()]), verbose=False)
+            except(KeyError):
+                if this.has_model():
+                    _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
+                else:
+                    if verbose:
+                        warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
+                             "You will have to build it yourself.")
+        return _this
+    
+    @staticmethod
+    def _read_model_params(model_params, verbose=True):
+        """
+        Return a 'build_model' compatible dictionary given by the 'model_params' saved in the prospector .h5 files.
+        
+        Parameters
+        ----------
+        model_params : [list(dict)]
+            List containing the prospector's model parameters.
+        
+        Options
+        -------
+        verbose : [bool]
+            If True, allow the warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        dict
+        """
+        import prospect.models.transforms as ptrans
+        _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()} for _p in _result["model_params"]}
+        for _p, _pv in _model.items():
+            _pv.pop("name")
+            if "depends_on" in _pv.keys():
+                if _pv["depends_on"][1] == "prospect.models.transforms":
+                    _pv["depends_on"] = eval("ptrans.{}".format(_pv["depends_on"][0]))()
+                else:
+                    _pv.pop("depends_on")
+                    if verbose:
+                        warn("Cannot build the dependance as it is not comming from 'prospect.models.transforms' package.")
+        return _model
+        
+    def show(self):
+        """
+        
+        """
+        return
+    
+    
+    
+    #------------------#
+    #   Descriptions   #
+    #------------------#
     @staticmethod
     def describe_priors(priors=None):
         """
+        Describe the prospector available priors.
         
+        Parameters
+        ----------
+        priors : [string or list(string) or None]
+            Prior choice.s for which you ask for description.
+            Can be one prior, or a list.
+            If "*" or "all" is given, every available priors will be described.
+            Default is None.
+        
+        
+        Returns
+        -------
+        Void
         """
         from prospect.models import priors as p_priors
         print(Prospector._get_box_title(title="Prior descriptions", box="\n#=#\n#   {}   #\n#=#\n"))
@@ -412,67 +658,6 @@ class Prospector():
                     print(Prospector._get_box_title(title=_t, box="+-+\n|   {}   |\n+-+"))
                     TemplateLibrary.describe(_t)
                     print("\n")
-    
-    def build_sps(self, sps=None, zcontinuous=1):
-        """
-        Create the appropriate sps.
-        
-        Parameters
-        ----------
-        zcontinuous : [float]
-            python-fsps parameter controlling how metallicity interpolation of the SSPs is acheived :
-                - 0: use discrete indices (controlled by parameter "zmet")
-                - 1: linearly interpolate in log Z/Z_\sun to the target metallicity (the parameter "logzsol")
-                - 2: convolve with a metallicity distribution function at each age (the MDF is controlled by the parameter "pmetals")
-            A value of '1' is recommended.
-            Default is 1.
-        
-        Options
-        -------
-        sps : [sps instance]
-            If not None, this will set the 'sps' attribute with the given sps.
-            Default is None.
-        
-        
-        Returns
-        -------
-        Void
-        """
-        if sps is not None:
-            self._sps = sps
-            return
-        
-        self.run_params["zcontinuous"] = zcontinuous
-        if not has_model():
-            raise AttributeError("You must run 'build_model first to be able automatically build the corresponding SPS.")
-        if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
-            from prospect.sources import CSPSpecBasis
-            self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
-        else:
-            from prospect.sources import FastStepBasis
-            self._sps = FastStepBasis(zcontinuous=zcontinuous)
-    
-    def run_fit(self, which="dynesty", obs=None, model=None, sps=None, run_params={}, verbose=False):
-        """
-        
-        """
-        from prospect.fitting import lnprobfn
-        from prospect.fitting import fit_model
-        
-        for ii in ["obs", "model", "sps"]:
-            if eval(ii) is not None:
-                eval("self.build_{0}({0})".format(ii))
-        
-        #Running parameters
-        self._run_params = {"optimize":False, "emcee":False, "dynesty":False, "zcontinuous":self.run_params["zcontinuous"]}
-        self.run_params[which] = True
-        self.run_params.update(run_params)
-        
-        #Fit
-        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, **self.run_params)
-        
-        if verbose:
-            print("Done '{}' in {:.0f}s.".format(which, self.fit_output["sampling"][1]))
     
     @staticmethod
     def describe_run_parameters(which="*"):
@@ -540,83 +725,6 @@ class Prospector():
                 _box[ii] = "".join(_box_edge)
         return "\n".join(_box)
     
-    def write_h5(self, savefile):
-        """
-        Save the fitting results and every fitter inputs (apart from the 'sps') in a given file.
-        
-        Parameters
-        ----------
-        savefile : [string]
-            File name in which to save the results.
-        
-        
-        Returns
-        -------
-        Void
-        """
-        import h5py
-        import pickle
-        
-        from prospect.io import write_results as writer
-        writer.write_hdf5(hfile=savefile, run_params=self.run_params, model=self.model, obs=self.obs,
-                          sampler=self.fit_output["sampling"][0], optimize_result_list=self.fit_output["optimization"][0],
-                          tsample=self.fit_output["sampling"][1], toptimize=self.fit_output["optimization"][1])
-        with h5py.File(savefile, "a") as _h5f:
-            _h5f.create_dataset("model", data=np.void(pickle.dumps(self.model)))
-            _h5f.create_dataset("sps", data=np.void(pickle.dumps(self.sps)))
-            _h5f.flush()
-        
-    @classmethod
-    def read_h5(cls, filename):
-        """
-        Build and return a Prospector object from a .h5 file.
-        
-        Parameters
-        ----------
-        filename : [string]
-            File name in which are saved the results to be read and loaded.
-        
-        
-        Returns
-        -------
-        Prospector
-        """
-        import prospect.io.read_results as reader
-        
-        _this = cls()
-        
-        _result, _obs, _ = reader.results_from(filename, dangerous=False)
-        _this.build_obs(obs=_obs, verbose=False, set_data=True)
-        _this._run_params = _result["run_params"]
-        
-        with h5py.File("test.h5", "r") as _h5f:
-            try:
-                _this.build_model(model=pickle.loads(_h5f["model"][()]), verbose=False)
-            except(KeyError):
-                try:
-                    _this.build_model(model=_this._read_model(_result["model_params"]), verbose=False)
-                except:
-                    warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file, you must build it yourself.")
-            try:
-                _this.build_sps(model=pickle.loads(_h5f["sps"][()]), verbose=False)
-            except(KeyError):
-                if this.has_model():
-                    _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
-                else:
-                    warn("Cannot build the SPS as the 'model' is not built. You will have to build it yourself.")
-        
-        return _this
-        
-    
-    def show(self):
-        """
-        
-        """
-        return
-            
-        
-        
-        
     
     
     #-------------------#
@@ -716,3 +824,5 @@ class Prospector():
     def has_fit_output(self):
         """ Test that 'fit_output' is not void """
         return self.fit_output is not None
+    
+    

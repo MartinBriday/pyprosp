@@ -10,7 +10,9 @@ from ..utils import tools
 
 _DEFAULT_FILTER_CONFIG = {"sdss":{_f:"sdss_{}0".format(_f) for _f in ["u", "g", "r", "i", "z"]},
                           "galex":{"FUV":"galex_FUV", "NUV":"galex_NUV"},
-                          "ps1":{_f:"ps1_{}".format(_f) for _f in ["g", "r", "i", "z", "y"]}}
+                          "ps1":{_f:"ps1_{}".format(_f) for _f in ["g", "r", "i", "z", "y"]},
+                          "spitzer":{_f:"spitzer_irac_ch{}".format(_f) for _f in [1, 2, 3, 4]}, 
+                          }
                           
 def keys_to_filters(keys):
     """
@@ -45,7 +47,7 @@ def filters_to_pysed(filters):
     -------
     list(string)
     """
-    return np.array([_DEFAULT_FILTER_CONFIG[_filt.split(".")[0]][_filt.split(".")[1]] for _filt in np.atleast_1d(filters)])
+    return np.array([_DEFAULT_FILTER_CONFIG[_filt.split(".")[0].lower()][_filt.split(".")[1]] for _filt in np.atleast_1d(filters)])
 
 def pysed_to_filters(filters):
     """
