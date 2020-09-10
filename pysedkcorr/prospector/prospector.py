@@ -77,6 +77,7 @@ class Prospector():
         spec : [dict or pandas.DataFrame or None]
             Spectrometry to be fitted.
             The given data must include wavelength and spectrum measurement under the keys 'lbda' and 'spec' respectively.
+            The given wavelength must be in AA.
             An uncertainty on spectrum can be given under the key 'spec.err'.
             Default is None.
         
@@ -112,7 +113,7 @@ class Prospector():
         if self.has_phot_in():
             self._filters = io.keys_to_filters(self.phot_in.keys())
     
-    def _set_data_from_obs(self, obs, verbose=True):
+    def _set_data_from_obs(self, obs, warnings=True):
         """
         Set up attributes coming from an 'obs' dictionary.
         
@@ -120,6 +121,12 @@ class Prospector():
         ----------
         obs : [dictionary]
             Prospector compatible 'obs' dictionary.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
         
         
         Returns
@@ -131,10 +138,10 @@ class Prospector():
                 if _attr == "_filters":
                     self._filters = io.pysed_to_filters(self.obs["filternames"])
                 else:
-                    eval("self."+_attr) = self.obs[_obs_key]
+                    self.__dict__[_attr] = self.obs[_obs_key]
             except(KeyError):
-                eval("self."+_attr) = None
-                if verbose:
+                self.__dict__[_attr] = None
+                if warnings:
                     warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
         
         try:
@@ -142,23 +149,23 @@ class Prospector():
             self._phot_in.update({_filt+".err":self.obs["maggies_unc"][ii] for ii, _filt in self.filters})
         except(KeyError):
             self._phot_in = None
-            if verbose:
+            if warnings:
                 warn("Cannot set 'phot_in' attribute either because there is no 'maggies' or no 'maggies_unc' in the 'obs' dictionary.")
         except(AttributeError):
             self._phot_in = None
-            if verbose:
+            if warnings:
                 warn("Cannot set 'phot_in' attribute because there is no 'filters' attribute.")
         
         try:
             self._spec_in = {"lbda":self.obs["wavelength"], "spec":self.obs["spectrum"], "spec.err":self.obs["unc"]}
         except(KeyError):
             self._spec_in = None
-            if verbose:
+            if warnings:
                 warn("Cannot set '_spec_in' attribute because there is no 'wavelength', 'spectrum' and 'unc' in the 'obs' dictionary.")
         if self.spec_in["lbda"] is None and self.spec_in["spec"] is None and self.spec_in["spec.err"]:
             self._spec_in = None
     
-    def build_obs(self, obs=None, verbose=False, set_data=False):
+    def build_obs(self, obs=None, phot_mask=None, spec_mask=None, verbose=False, warnings=True, set_data=False):
         """
         Build a dictionary containing observations in a prospector compatible format.
         
@@ -169,9 +176,26 @@ class Prospector():
             Automatically change the attributes to the given 'obs' dictionary.
             Default is None.
         
+        phot_mask : [list(string) or None]
+            Give a list of filters you want the SED fitting to be run on.
+            The other filter measurements will be masked.
+            If None, no mask is applied.
+            Default is None.
+        
+        spec_mask : [tuple(float or None, float or None) or None]
+            Give a tuple of two wavelength in AA (lower_limit, upper_limit) to run the SED fitting on the input spectrum between the given limits.
+            The rest of the spectrum is masked.
+            You can give None for a limit to keep the whole spectrum in that direction.
+            If None, the whole spectrum is fitted.
+            Default is None.
+        
         verbose : [bool]
             If True, print the built observation dictionary.
             Default is False.
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
         
         set_data : [bool]
             If 'obs' is not None, set to True if you want to extract and set attributes from the given 'obs' dictionary.
@@ -185,7 +209,7 @@ class Prospector():
         if obs is not None:
             self._obs = obs
             if set_data:
-                self._set_data_from_obs(obs=self.obs, verbose=verbose)
+                self._set_data_from_obs(obs=self.obs, warnings=warnings)
             return
         
         from sedpy.observate import load_filters
@@ -197,14 +221,29 @@ class Prospector():
         if self.has_phot_in():
             self._obs.update({"maggies":np.array([self.phot_in[_filt] for _filt in self.filters]),
                               "maggies_unc":np.array([self.phot_in[_filt+".err"] for _filt in self.filters])})
+            if phot_mask is not None:
+                self._obs.update({"phot_mask":np.array([_f in phot_mask for _f in self.filters])})
         ### Spectrometry ###
         self._obs["wavelength"] = None
         if self.has_spec_in():
             self._obs.update({"wavelength":np.array(self.spec_in["lbda"]),
                               "spectrum":np.array(self.spec_in["spec"]),
                               "unc":np.array(self.spec_in["spec.err"]) if "spec.err" in self.spec_in.keys() else None})
+            if spec_mask is not None:
+                if isinstance(spec_mask, tuple) and len(spec_mask) == 2:
+                    _lim_low, _lim_up = spec_mask
+                    _spec_mask = np.ones(len(self.obs["wavelength"]), dtype = bool)
+                    if _lim_low is not None:
+                        _spec_mask &= self.obs["wavelength"] > _lim_low
+                    if _lim_up is not None:
+                        _spec_mask &= self.obs["wavelength"] < _lim_up
+                    self._obs.update({"mask":_spec_mask})
+                else:
+                    if warnings:
+                        warn("Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant (: {})".format(spec_mask))
         self._obs = fix_obs(self._obs)
         if verbose:
+            print(self._get_box_title(title="Built obs", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(self.obs)
         
     def build_model(self, model=None, templates=None, verbose=False, describe=False):
@@ -269,7 +308,7 @@ class Prospector():
         
         self._model = SedModel(_model)
     
-    def modify_model(self, changes=None, removing=None, verbose=False, describe=False):
+    def modify_model(self, changes=None, removing=None, verbose=False, warnings=True, describe=False):
         """
         Apply changes on the loaded model.
         
@@ -289,6 +328,10 @@ class Prospector():
         verbose : [bool]
             If True, print the SED model before and after modifications.
             Default is False.
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
         
         describe : [bool]
             If True, print the description for any used not native prior.
@@ -312,15 +355,19 @@ class Prospector():
             _changes = changes.copy()
             for _p, _pv in _changes.items():
                 if _p not in _model.keys():
-                     warn("'{}' is not included in model parameters.".format(_p))
-                     _pv.pop(_p)
+                    if warnings:
+                        warn("'{}' is not included in model parameters. Adding it...".format(_p))
+                    #_changes.pop(_p)
+                    _model[_p] = _pv
                 for _k, _kv in _pv.items():
                     if _k not in _model[_p].keys():
-                        warn("'{}' is not included in '{}' model parameters.".format(_k, _p))
-                        _kv.pop(_k)
+                        if warnings:
+                            warn("'{}' is not included in '{}' model parameters. Adding it...".format(_k, _p))
+                        #_pv.pop(_k)
+                        _model[_p][_k] = _kv
                     if _k == "prior" and type(_kv) == dict:
                         _describe_priors.append(_kv)
-                        _kv = self.build_prior(_kv)
+                        _pv[_k] = self.build_prior(_kv)
                 _model[_p].update(_pv)
         if describe and len(_describe_priors) > 0:
             self.describe_priors(_describe_priors)
@@ -331,7 +378,8 @@ class Prospector():
                 if _t in _model.keys():
                     _model.pop(_t)
                 else:
-                    warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
+                    if warnings:
+                        warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
         
         if verbose:
             print(self._get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
@@ -397,9 +445,9 @@ class Prospector():
             return
         
         self.run_params["zcontinuous"] = zcontinuous
-        if not has_model():
+        if not self.has_model():
             raise AttributeError("You must run 'build_model first to be able automatically build the corresponding SPS.")
-        if "mass" not in self.model.params.keys() and "agebins" not in self.model.params.keys():
+        if "agebins" not in self.model.params.keys():#"mass" not in self.model.params.keys():
             from prospect.sources import CSPSpecBasis
             self._sps = CSPSpecBasis(zcontinuous=zcontinuous)
         else:
@@ -484,7 +532,7 @@ class Prospector():
             _h5f.flush()
         
     @classmethod
-    def read_h5(cls, filename, verbose=True):
+    def read_h5(cls, filename, warnings=True):
         """
         Build and return a Prospector object from a .h5 file.
         
@@ -495,7 +543,7 @@ class Prospector():
         
         Options
         -------
-        verbose : [bool]
+        warnings : [bool]
             If True, allow the warnings to be printed.
             Default is True.
         
@@ -510,7 +558,7 @@ class Prospector():
         _this = cls()
         
         _result, _obs, _ = reader.results_from(filename, dangerous=False)
-        _this.build_obs(obs=_obs, verbose=verbose, set_data=True)
+        _this.build_obs(obs=_obs, verbose=False, warnings=warnings, set_data=True)
         _this._run_params = _result["run_params"]
         
         with h5py.File("test.h5", "r") as _h5f:
@@ -521,10 +569,10 @@ class Prospector():
                     _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()}
                               for _p in _result["model_params"]}
                     _this.build_model(model=_this._read_model_params(_result["model_params"]), verbose=False)
-                    if verbose:
+                    if warnings:
                         warn("The model has been built with dependance functions, if any, with their default inputs.")
                 except:
-                    if verbose:
+                    if warnings:
                         warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
             try:
@@ -533,13 +581,13 @@ class Prospector():
                 if this.has_model():
                     _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
                 else:
-                    if verbose:
+                    if warnings:
                         warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
                              "You will have to build it yourself.")
         return _this
     
     @staticmethod
-    def _read_model_params(model_params, verbose=True):
+    def _read_model_params(model_params, warnings=True):
         """
         Return a 'build_model' compatible dictionary given by the 'model_params' saved in the prospector .h5 files.
         
@@ -550,7 +598,7 @@ class Prospector():
         
         Options
         -------
-        verbose : [bool]
+        warnings : [bool]
             If True, allow the warnings to be printed.
             Default is True.
         

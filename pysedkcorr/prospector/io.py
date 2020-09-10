@@ -11,7 +11,7 @@ from ..utils import tools
 _DEFAULT_FILTER_CONFIG = {"sdss":{_f:"sdss_{}0".format(_f) for _f in ["u", "g", "r", "i", "z"]},
                           "galex":{"FUV":"galex_FUV", "NUV":"galex_NUV"},
                           "ps1":{_f:"ps1_{}".format(_f) for _f in ["g", "r", "i", "z", "y"]},
-                          "spitzer":{_f:"spitzer_irac_ch{}".format(_f) for _f in [1, 2, 3, 4]}, 
+                          "spitzer":{_f:"spitzer_irac_ch{}".format(_f) for _f in ["1", "2", "3", "4"]}, 
                           }
                           
 def keys_to_filters(keys):
