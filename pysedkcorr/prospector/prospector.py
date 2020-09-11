@@ -145,8 +145,8 @@ class Prospector():
                     warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
         
         try:
-            self._phot_in = {_filt:self.obs["maggies"][ii] for ii, _filt in self.filters}
-            self._phot_in.update({_filt+".err":self.obs["maggies_unc"][ii] for ii, _filt in self.filters})
+            self._phot_in = {_filt:self.obs["maggies"][ii] for ii, _filt in enumerate(self.filters)}
+            self._phot_in.update({_filt+".err":self.obs["maggies_unc"][ii] for ii, _filt in enumerate(self.filters)})
         except(KeyError):
             self._phot_in = None
             if warnings:
@@ -553,6 +553,7 @@ class Prospector():
         Prospector
         """
         import prospect.io.read_results as reader
+        import h5py
         import pickle
         
         _this = cls()
@@ -576,7 +577,7 @@ class Prospector():
                         warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
             try:
-                _this.build_sps(model=pickle.loads(_h5f["sps"][()]), verbose=False)
+                _this.build_sps(sps=pickle.loads(_h5f["sps"][()]))
             except(KeyError):
                 if this.has_model():
                     _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
