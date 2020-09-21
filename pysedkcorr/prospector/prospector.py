@@ -454,7 +454,7 @@ class Prospector():
             from prospect.sources import FastStepBasis
             self._sps = FastStepBasis(zcontinuous=zcontinuous)
     
-    def run_fit(self, which="dynesty", run_params={}, savefile=None, verbose=False):
+    def run_fit(self, which="dynesty", run_params={}, savefile=None, load_chains=True, verbose=False):
         """
         Run the SED fitting.
         
@@ -478,6 +478,11 @@ class Prospector():
             If a file name is given, the fitting results are saved in this file.
             Must end with ".h5".
             Default is None.
+        
+        set_chains : [bool]
+            If True, set the fitted parameter walkers as attributes.
+            !!! Warning !!! Only works with "dynesty" and "emcee" SED fitting.
+            Default is True.
         
         verbose : [bool]
             If True, print out the time taken by the SED fitting.
@@ -504,6 +509,44 @@ class Prospector():
         
         if verbose:
             print("Done '{}' in {:.0f}s.".format(which, self.fit_output["sampling"][1]))
+        
+        #Load chains
+        if set_chains:
+            _sampling = self.fit_output["sampling"][0]
+            _chains = _sampling.flatchain if which=="emcee" else _sampling["samples"]
+            _start = 0 if which=="emcee" else np.argmax(_sampling["samples_id"]>100)
+            self.set_chains(chains=_chains, start=_start)
+    
+    def set_chains(self, chains, start=0):
+        """
+        Load chains from the fit output.
+        
+        Parameters
+        ----------
+        chains : [np.array]
+            Fitted parameter walkers.
+            The given array must have shape:
+                - (nb walkers, nb steps, nb parameters) if multiple walkers,
+                - (nb step, nb parmaters) else.
+        
+        Options
+        -------
+        start : [int]
+            Chain index from which starting to save the walkers.
+            Default is 0.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        if len(chains.shape) == 2:
+            _chains = chains.copy()
+        elif len(chains.shape) == 3:
+            _chains = np.concatenate(chains)
+        else:
+            raise ValueError("The chains are not compatible.")
+        self._chains = {_p:np.array([jj[ii] for jj in _chains[start:]]) for ii, _p in enumerate(self.theta_labels)}
     
     def write_h5(self, savefile):
         """
@@ -562,7 +605,8 @@ class Prospector():
         _this.build_obs(obs=_obs, verbose=False, warnings=warnings, set_data=True)
         _this._run_params = _result["run_params"]
         
-        with h5py.File("test.h5", "r") as _h5f:
+        with h5py.File(filename, "r") as _h5f:
+            # Load model
             try:
                 _this.build_model(model=pickle.loads(_h5f["model"][()]), verbose=False)
             except(KeyError):
@@ -576,6 +620,7 @@ class Prospector():
                     if warnings:
                         warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
+            # Load SPS
             try:
                 _this.build_sps(sps=pickle.loads(_h5f["sps"][()]))
             except(KeyError):
@@ -585,6 +630,10 @@ class Prospector():
                     if warnings:
                         warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
                              "You will have to build it yourself.")
+        
+        # Set chains
+        _this.set_chains(chains=_result["chain"], start=(0 if _this.run_params["emcee"] else np.argmax(_result["samples_id"]>100)))
+        
         return _this
     
     @staticmethod
@@ -621,7 +670,13 @@ class Prospector():
                         warn("Cannot build the dependance as it is not comming from 'prospect.models.transforms' package.")
         return _model
         
-    def show(self):
+    def show_walkers(self):
+        """
+        
+        """
+        return
+    
+    def show_corner(self):
         """
         
         """
@@ -857,6 +912,11 @@ class Prospector():
         return self.model is not None
     
     @property
+    def theta_labels(self):
+        """ List of the fitted parameters """
+        return self.model.theta_labels()
+    
+    @property
     def run_params(self):
         """ Running parameters (dictionary) """
         if not hasattr(self,"_run_params"):
@@ -873,5 +933,18 @@ class Prospector():
     def has_fit_output(self):
         """ Test that 'fit_output' is not void """
         return self.fit_output is not None
+    
+    @property
+    def chains(self):
+        """ Dictionary containing the fitted parameters chains """
+        if not hasattr(self,"_chains"):
+            self._chains = None
+        return self._chains
+    
+    @property
+    def fitted_params(self):
+        """ Dictionary containing the fitted paramters (median, -sigma, +sigma) """
+        _perc = {_p:np.percentile(_chain, [16, 50, 84]) for _p, _chain in self.chains.items()}
+        return {_p:(_pv[1], _pv[1]-_pv[0], _pv[2]-_pv[1]) for _p, _pv in _perc.items()}
     
     
