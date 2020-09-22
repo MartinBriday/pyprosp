@@ -575,7 +575,7 @@ class Prospector():
             _h5f.flush()
         
     @classmethod
-    def read_h5(cls, filename, warnings=True):
+    def from_h5(cls, filename, warnings=True):
         """
         Build and return a Prospector object from a .h5 file.
         
@@ -595,13 +595,12 @@ class Prospector():
         -------
         Prospector
         """
-        import prospect.io.read_results as reader
         import h5py
         import pickle
         
         _this = cls()
         
-        _result, _obs, _ = reader.results_from(filename, dangerous=False)
+        _result, _obs, _ = _this.read_h5(filename, dangerous=False)
         _this.build_obs(obs=_obs, verbose=False, warnings=warnings, set_data=True)
         _this._run_params = _result["run_params"]
         
@@ -637,6 +636,25 @@ class Prospector():
         return _this
     
     @staticmethod
+    def read_h5(filename, **kwargs):
+        """
+        Read and return the prospector fit results saved in a given .h5 file.
+        
+        Parameters
+        ----------
+        filename : [string]
+            File name in which are saved the results to be read and returned.
+        
+        
+        Returns
+        -------
+        dict, dict, SedModel
+        """
+        import prospect.io.read_results as reader
+        return reader.results_from(filename, **kwargs)
+    
+    
+    @staticmethod
     def _read_model_params(model_params, warnings=True):
         """
         Return a 'build_model' compatible dictionary given by the 'model_params' saved in the prospector .h5 files.
@@ -669,18 +687,124 @@ class Prospector():
                     if verbose:
                         warn("Cannot build the dependance as it is not comming from 'prospect.models.transforms' package.")
         return _model
-        
-    def show_walkers(self):
-        """
-        
-        """
-        return
     
-    def show_corner(self):
+    
+    #---------------#
+    #   Plottings   #
+    #---------------#
+    def _get_plot_data_(self):
         """
+        Return a dictionary compatible to plot fit results using prospector methods.
         
+        
+        Returns
+        -------
+        dict
         """
-        return
+        _nb_steps = len(self.chains[self.theta_labels[0]])
+        _chains = [[self.chains[_p][ii] for _p in self.theta_labels] for ii in np.arange(_nb_steps)]
+        _data = {"model":self.model,
+                 "chain":np.array(_chains),
+                 "lnprobability":None}
+        return _data
+        
+    def show_walkers(self, savefile=None, **kwargs):
+        """
+        Plot the fitted parameters walkers.
+        Return the figure.
+        
+        Options
+        -------
+        savefile : [string or None]
+            Give a directory to save the figure.
+            Default is None (not saved).
+        
+        showpars : [list(string) or None]
+            List of the parameters to show.
+            If None, plot every fitted parameters (listed in 'self.theta_labels').
+            Defaults is None.
+
+        start : [int]
+            Integer giving the iteration number from which to start plotting.
+            Default is 0.
+
+        chains : [np.array or slice]
+            If results are from an ensemble sampler, setting 'chain' to an integer
+            array of walker indices will cause only those walkers to be used in
+            generating the plot.
+            Useful for to keep the plot from getting too cluttered.
+            Default is slice(None, None, None).
+        
+        truths : [list(float) or None]
+            List of truth values for the chosen parameters to add them on the plot.
+            Default is None.
+    
+        **plot_kwargs:
+            Extra keywords are passed to the 'matplotlib.axes._subplots.AxesSubplot.plot()' method.
+        
+        Returns
+        -------
+        matplotlib.Figure
+        """
+        import prospect.io.read_results as reader
+        _data = self._get_plot_data_()
+        _fig = reader.traceplot(_data, **kwargs)
+        if savefile is not None:
+            _fig.savefig(savefile)
+        return _fig
+    
+    def show_corner(self, savefile=None, **kwargs):
+        """
+        Plot a corner plot of the fitted parameters.
+        Return the figure.
+        
+        Options
+        -------
+        savefile : [string or None]
+            Give a directory to save the figure.
+            Default is None (not saved).
+
+        showpars : [list(string) or None]
+            List of the parameters to show.
+            If None, plot every fitted parameters (listed in 'self.theta_labels').
+            Defaults is None.
+            
+        truths : [list(float) or None]
+            List of truth values for the chosen parameters to add them on the plot.
+            Default is None.
+
+        start : [int]
+            Integer giving the iteration number from which to start plotting.
+            Default is 0.
+        
+        thin : [int]
+            The thinning of each chain to perform when drawing samples to plot.
+            Default is 1.
+
+        chains : [np.array or slice]
+            If results are from an ensemble sampler, setting 'chain' to an integer
+            array of walker indices will cause only those walkers to be used in
+            generating the plot.
+            Useful for to keep the plot from getting too cluttered.
+            Default is slice(None, None, None).
+        
+        logify : [list(string)]
+            A list of parameter names to plot in log scale.
+            Default is ["mass", "tau"].
+    
+        **kwargs:
+            Remaining keywords are passed to the 'corner' plotting package.
+        
+        Returns
+        -------
+        matplotlib.Figure
+        """
+        import prospect.io.read_results as reader
+        _data = self._get_plot_data_()
+        _fig = reader.subcorner(_data, **kwargs)
+        if savefile is not None:
+            _fig.savefig(savefile)
+        return _fig
     
     
     
