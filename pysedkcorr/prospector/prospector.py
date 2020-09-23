@@ -10,6 +10,7 @@ from warnings import warn
 from pprint import pprint
 
 from . import io
+from . import spectrum
 
 class Prospector():
     """
@@ -222,7 +223,7 @@ class Prospector():
             self._obs.update({"maggies":np.array([self.phot_in[_filt] for _filt in self.filters]),
                               "maggies_unc":np.array([self.phot_in[_filt+".err"] for _filt in self.filters])})
             if phot_mask is not None:
-                self._obs.update({"phot_mask":np.array([_f in phot_mask for _f in self.filters])})
+                self._obs["phot_mask"] = np.array([_f in phot_mask for _f in self.filters])
         ### Spectrometry ###
         self._obs["wavelength"] = None
         if self.has_spec_in():
@@ -237,7 +238,7 @@ class Prospector():
                         _spec_mask &= self.obs["wavelength"] > _lim_low
                     if _lim_up is not None:
                         _spec_mask &= self.obs["wavelength"] < _lim_up
-                    self._obs.update({"mask":_spec_mask})
+                    self._obs["mask"] = _spec_mask
                 else:
                     if warnings:
                         warn("Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant (: {})".format(spec_mask))
@@ -454,7 +455,7 @@ class Prospector():
             from prospect.sources import FastStepBasis
             self._sps = FastStepBasis(zcontinuous=zcontinuous)
     
-    def run_fit(self, which="dynesty", run_params={}, savefile=None, load_chains=True, verbose=False):
+    def run_fit(self, which="dynesty", run_params={}, savefile=None, set_chains=True, verbose=False):
         """
         Run the SED fitting.
         
@@ -512,41 +513,67 @@ class Prospector():
         
         #Load chains
         if set_chains:
-            _sampling = self.fit_output["sampling"][0]
-            _chains = _sampling.flatchain if which=="emcee" else _sampling["samples"]
-            _start = 0 if which=="emcee" else np.argmax(_sampling["samples_id"]>100)
-            self.set_chains(chains=_chains, start=_start)
+            self.set_chains(data=self.fit_output, start=None)
     
-    def set_chains(self, chains, start=0):
+    def set_chains(self, data=None, start=None):
         """
         Load chains from the fit output.
         
         Parameters
         ----------
-        chains : [np.array]
-            Fitted parameter walkers.
-            The given array must have shape:
-                - (nb walkers, nb steps, nb parameters) if multiple walkers,
-                - (nb step, nb parmaters) else.
+        data : [dict or tuple or None]
+            Give either 'self.fit_output' or the results saved in a .h5 file (run 'Prospector.read_h5').
+            If None, automatically load chains from the fit output.
+            Default is None.
         
         Options
         -------
-        start : [int]
+        start : [int or None]
             Chain index from which starting to save the walkers.
-            Default is 0.
+            If None, the start depends on the SED fitter :
+                - "emcee" --> 0
+                - "dynesty" --> index when "samples_id" (see dynesty fit output) exceeds 100.
+                                (seems to correspond to the dynamic phase of dynesty)
+            Default is None.
         
         
         Returns
         -------
         Void
         """
-        if len(chains.shape) == 2:
-            _chains = chains.copy()
-        elif len(chains.shape) == 3:
-            _chains = np.concatenate(chains)
+        if data is None:
+            data = self.fit_output
+        try:
+            _sampling = data["sampling"][0]
+            _chains = _sampling.chain if self.run_params["emcee"] else _sampling["samples"]
+        except KeyError:
+            _sampling = data
+            _chains = _sampling["chain"]
+        except TypeError:
+            _sampling = data[0]
+            _chains = _sampling["chain"]
+        
+        _start = (0 if self.run_params["emcee"] else np.argmax(_sampling["samples_id"]>100)) if start is None else start
+        if len(_chains.shape) == 2:
+            _chains = _chains.copy()[_start:]
+        elif len(_chains.shape) == 3:
+            _chains = np.concatenate(_chains.copy()[:, _start:, :])
         else:
-            raise ValueError("The chains are not compatible.")
-        self._chains = {_p:np.array([jj[ii] for jj in _chains[start:]]) for ii, _p in enumerate(self.theta_labels)}
+            raise ValueError(f"There is an issue with the chains!!!\n\n{_chains}")
+        
+        self._chains = np.array(_chains)
+        self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
+    
+    def _load_spectrum_(self):
+        """
+        Load a spectrum object and set it as attribute.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        self._spectrum = spectrum.ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps)
     
     def write_h5(self, savefile):
         """
@@ -631,7 +658,7 @@ class Prospector():
                              "You will have to build it yourself.")
         
         # Set chains
-        _this.set_chains(chains=_result["chain"], start=(0 if _this.run_params["emcee"] else np.argmax(_result["samples_id"]>100)))
+        _this.set_chains(data=_result, start=None)
         
         return _this
     
@@ -949,15 +976,16 @@ class Prospector():
         for ii, _b in enumerate(_box):
             if _b != _title and _b != "" and _b is not None:
                 _box_edge = list(_b)
-                _box_edge[1] = "".join([_box_edge[1]]*(len(_title)-2))
+                _ii_mid = int(len(_box_edge) / 2)
+                _box_edge[_ii_mid] = "".join([_box_edge[1]]*(len(_title)-(len(_box_edge)-1)))
                 _box[ii] = "".join(_box_edge)
         return "\n".join(_box)
     
     
     
-    #-------------------#
-    #   Properties      #
-    #-------------------#
+    #----------------#
+    #   Properties   #
+    #----------------#
     @property
     def phot_in(self):
         """ Input photometry """
@@ -1060,15 +1088,33 @@ class Prospector():
     
     @property
     def chains(self):
-        """ Dictionary containing the fitted parameters chains """
+        """ List of the fitted parameters chains """
         if not hasattr(self,"_chains"):
             self._chains = None
         return self._chains
+    
+    @property
+    def param_chains(self):
+        """ Dictionary containing the fitted parameters chains """
+        if not hasattr(self,"_param_chains"):
+            self._param_chains = None
+        return self._param_chains
     
     @property
     def fitted_params(self):
         """ Dictionary containing the fitted paramters (median, -sigma, +sigma) """
         _perc = {_p:np.percentile(_chain, [16, 50, 84]) for _p, _chain in self.chains.items()}
         return {_p:(_pv[1], _pv[1]-_pv[0], _pv[2]-_pv[1]) for _p, _pv in _perc.items()}
+    
+    @property
+    def spectrum(self):
+        """ spectra estimated from run() ; LePhareSpectrumCollection object """
+        if not hasattr(self, "_spectrum"):
+            if self.has_fit_output():
+                self.set_chains(data=self.fit_output, start=None)
+                self._load_spectrum_()
+            else:
+                raise AttributeError("You did not run the SED fit ('self.run_fit').")
+        return self._spectra
     
     
