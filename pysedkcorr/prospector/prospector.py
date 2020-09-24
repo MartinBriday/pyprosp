@@ -627,9 +627,9 @@ class Prospector():
         
         _this = cls()
         
-        _result, _obs, _ = _this.read_h5(filename, dangerous=False)
+        _this._h5_results, _obs, _ = _this.read_h5(filename, dangerous=False)
         _this.build_obs(obs=_obs, verbose=False, warnings=warnings, set_data=True)
-        _this._run_params = _result["run_params"]
+        _this._run_params = _this.h5_results["run_params"]
         
         with h5py.File(filename, "r") as _h5f:
             # Load model
@@ -638,8 +638,8 @@ class Prospector():
             except(KeyError):
                 try:
                     _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()}
-                              for _p in _result["model_params"]}
-                    _this.build_model(model=_this._read_model_params(_result["model_params"]), verbose=False)
+                              for _p in _this.h5_results["model_params"]}
+                    _this.build_model(model=_this._read_model_params(_this.h5_results["model_params"]), verbose=False)
                     if warnings:
                         warn("The model has been built with dependance functions, if any, with their default inputs.")
                 except:
@@ -647,18 +647,18 @@ class Prospector():
                         warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
             # Load SPS
-            try:
-                _this.build_sps(sps=pickle.loads(_h5f["sps"][()]))
-            except(KeyError):
-                if this.has_model():
-                    _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
-                else:
-                    if warnings:
-                        warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
-                             "You will have to build it yourself.")
+            #try:
+            #    _this.build_sps(sps=pickle.loads(_h5f["sps"][()]))
+            #except(KeyError):
+            if _this.has_model():
+                _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
+            else:
+                if warnings:
+                    warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
+                         "You will have to build it yourself.")
         
         # Set chains
-        _this.set_chains(data=_result, start=None)
+        _this.set_chains(data=_this.h5_results, start=None)
         
         return _this
     
@@ -728,8 +728,7 @@ class Prospector():
         -------
         dict
         """
-        _nb_steps = len(self.chains[self.theta_labels[0]])
-        _chains = [[self.chains[_p][ii] for _p in self.theta_labels] for ii in np.arange(_nb_steps)]
+        _chains = [[self.chains[_p][ii] for _p in self.theta_labels] for ii in np.arange(self.len_chains)]
         _data = {"model":self.model,
                  "chain":np.array(_chains),
                  "lnprobability":None}
@@ -1087,11 +1086,27 @@ class Prospector():
         return self.fit_output is not None
     
     @property
+    def h5_results(self):
+        """ Dictionary containg the fit results, loaded from .h5 file """
+        if not hasattr(self,"_h5_results"):
+            self._h5_results = None
+        return self._h5_results
+    
+    def has_h5_results(self):
+        """ Test that 'h5_results' is not void """
+        return self.h5_results is not None
+    
+    @property
     def chains(self):
         """ List of the fitted parameters chains """
         if not hasattr(self,"_chains"):
             self._chains = None
         return self._chains
+    
+    @property
+    def len_chains(self):
+        """ Length of the chains --> number of steps for the MCMC """
+        return len(self.chains)
     
     @property
     def param_chains(self):
@@ -1103,7 +1118,7 @@ class Prospector():
     @property
     def fitted_params(self):
         """ Dictionary containing the fitted paramters (median, -sigma, +sigma) """
-        _perc = {_p:np.percentile(_chain, [16, 50, 84]) for _p, _chain in self.chains.items()}
+        _perc = {_p:np.percentile(_chain, [16, 50, 84]) for _p, _chain in self.param_chains.items()}
         return {_p:(_pv[1], _pv[1]-_pv[0], _pv[2]-_pv[1]) for _p, _pv in _perc.items()}
     
     @property
@@ -1113,8 +1128,11 @@ class Prospector():
             if self.has_fit_output():
                 self.set_chains(data=self.fit_output, start=None)
                 self._load_spectrum_()
+            elif self.has_h5_results():
+                self.set_chains(data=self.h5_results, start=None)
+                self._load_spectrum_()
             else:
                 raise AttributeError("You did not run the SED fit ('self.run_fit').")
-        return self._spectra
+        return self._spectrum
     
     

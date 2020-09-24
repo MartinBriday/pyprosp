@@ -196,3 +196,69 @@ def convert_flux_unit(flux, unit_in, unit_out, wavelength=None):
         _flux *= 1e23
         return _flux / 3631 if unit_out == "mgy" else _flux
     return _flux
+
+def get_unit_label(unit):
+    """
+    Return a string label depending on the given unit.
+    
+    Parameters
+    ----------
+    unit : [string]
+        Available units are:
+            - "Hz": erg/s/cm2/Hz
+            - "AA": erg/s/cm2/AA
+            - "mgy": maggies
+            - "Jy": Jansky
+    
+    
+    Returns
+    -------
+    string
+    """
+    _labels = {"Hz":r"$\mathrm{erg\,s^{-1}\,cm^{-2}\,Hz^{-1}}$",
+               "AA":r"$\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$",
+               "mgy":"maggies",
+               "Jy":"Jansky",
+               "mag":"magnitude"}
+    return _labels[unit]
+
+def deredshift(lbda=None, flux=None, z=0, variance=None, exp=3):
+    """
+    Deredshift spectrum from z to 0, and apply a (1+z)**exp flux-correction.
+    
+    exp=3 is for erg/s/cm2/A spectra to be later corrected using proper (comoving) distance but *not* luminosity distance.
+    
+    Return the restframed wavelength, flux and, if any, variance.
+
+    Parameters
+    ----------
+    lbda, flux : [array]
+        Wavelength and flux or the spectrum.
+        Flux is expected to be in erg/s/cm2/AA.
+        
+    z : [float]
+        Cosmological redshift
+
+    variance : [array or None]
+        Spectral variance if any (square of flux units).
+        Default is None.
+
+    exp : [float]
+        Exposant for the redshift flux dilution (exp=3 is for erg/s/cm2/AA spectra).
+        Default is 3.
+
+    Returns
+    -------
+    np.array, np.array, np.array if variance is not None
+    """
+    zp1 = 1 + z
+    _lbda, _flux, _variance = None, None, None
+    if lbda is not None:
+        _lbda = lbda/zp1           # Wavelength correction
+    if flux is not None:
+        _flux = flux*(zp1**exp)      # Flux correction
+    if variance is not None:
+        _variance = variance*(zp1**exp)**2
+    
+    _out = [ii for ii in [_lbda, _flux, _variance] if ii is not None]
+    return _out[0] if len(_out) == 1 else tuple(_out)
