@@ -217,9 +217,9 @@ def get_unit_label(unit):
     """
     _labels = {"Hz":r"$\mathrm{erg\,s^{-1}\,cm^{-2}\,Hz^{-1}}$",
                "AA":r"$\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$",
-               "mgy":"maggies",
-               "Jy":"Jansky",
-               "mag":"magnitude"}
+               "mgy":"mgy",
+               "Jy":"Jy",
+               "mag":"mag"}
     return _labels[unit]
 
 def deredshift(lbda=None, flux=None, z=0, variance=None, exp=3):

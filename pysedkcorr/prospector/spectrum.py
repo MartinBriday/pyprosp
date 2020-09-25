@@ -155,7 +155,7 @@ class ProspectorSpectrum():
             ax.fill_between(_lbda, _spec_low, _spec_up, **spec_unc_prop)
 
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
-        ax.set_ylabel(tools.get_unit_label(unit), fontsize="large")
+        ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
         
         if savefile is not None:
             fig.savefig(savefile)
