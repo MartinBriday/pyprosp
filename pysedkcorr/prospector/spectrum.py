@@ -3,6 +3,7 @@ import pandas
 import numpy as np
 
 from ..utils import tools
+from . import io
 
 class ProspectorSpectrum():
     """
@@ -26,6 +27,9 @@ class ProspectorSpectrum():
         self._sps = sps
         self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
     
+    #------------------#
+    #   Spectrometry   #
+    #------------------#
     def load_spectra(self, size=None, savefile=None, **kwargs):
         """
         
@@ -33,10 +37,10 @@ class ProspectorSpectrum():
         if size is not None and isinstance(size, int):
             self._mask_chains = np.random.choice(self.len_chains, size, replace=False)
         _chains = self.chains[self.mask_chains] if self.has_mask_chains() else self.chains
-        self._spectrum_chain = np.array([self.get_theta_spectrum(theta=_theta, unit="mgy") for _theta in _chains])
-        self._spectrum_chain = pandas.DataFrame(self._spectrum_chain.T)
-        self._spectrum_chain.index = self.wavelengths
-        self._spectrum_chain.index.names = ["lbda"]
+        self._spec_chain = np.array([self.get_theta_spec(theta=_theta, unit="mgy") for _theta in _chains])
+        self._spec_chain = pandas.DataFrame(self._spec_chain.T)
+        self._spec_chain.index = self.wavelengths
+        self._spec_chain.index.names = ["lbda"]
         if savefile is not None:
             self.save_spec(savefile=savefile, **kwargs)
     
@@ -44,9 +48,9 @@ class ProspectorSpectrum():
         """
         
         """
-        self.spectrum_chain.to_csv(savefile, **kwargs)
+        self.spec_chain.to_csv(savefile, **kwargs)
     
-    def get_theta_spectrum(self, theta, unit="mgy"):
+    def get_theta_spec(self, theta, unit="mgy"):
         """
         
         """
@@ -58,24 +62,20 @@ class ProspectorSpectrum():
         
         """
         _lbda = self.wavelengths.copy()
-        _spec = self.spectrum.copy()
-        _spec_low, _spec_up = np.percentile(self.spectrum_chain, [16, 84], axis=1)
-        _spec = [_spec, _spec_low, _spec_up]
+        _spec_chain = np.array(self.spec_chain.T)
         _unit_in = "mgy"
         
         # Deredshift
         if restframe:
-            for ii, _s in enumerate(_spec):
-                _s = tools.convert_flux_unit(_s, _unit_in, "AA", wavelength=_lbda)
-                _spec[ii] = tools.deredshift(lbda=None, flux=_s, z=self.z, variance=None, exp=3)
+            _spec_chain = tools.convert_flux_unit(_spec_chain, _unit_in, "AA", wavelength=_lbda)
+            _spec_chain = tools.deredshift(lbda=None, flux=_spec_chain, z=self.z, variance=None, exp=3)
             _lbda = tools.deredshift(lbda=_lbda, flux=None, z=self.z, variance=None, exp=3)
             _unit_in = "AA"
         
         # Change unit
-        for ii, _s in enumerate(_spec):
-            _spec[ii] = tools.convert_flux_unit(_s, _unit_in, unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
-            if unit == "mag":
-                _spec[ii] = np.array(tools.flux_to_mag(_spec[ii], dflux=None, wavelength=_lbda, zp=None, inhz=False))[0]
+        _spec_chain = tools.convert_flux_unit(_spec_chain, _unit_in, unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
+        if unit == "mag":
+            _spec_chain = tools.flux_to_mag(_spec_chain, dflux=None, wavelength=_lbda, zp=None, inhz=False)
         
         # Build the mask given by the wavelength desired limits
         _mask_lbda = np.ones(len(_lbda), dtype = bool)
@@ -85,11 +85,118 @@ class ProspectorSpectrum():
                 _mask_lbda &= _lbda > _lim_low
             if _lim_up is not None:
                 _mask_lbda &= _lbda < _lim_up
-                
-        return _lbda[_mask_lbda], _spec[0][_mask_lbda], _spec[1][_mask_lbda], _spec[2][_mask_lbda]
+        
+        _spec_low, _spec, _spec_up = np.percentile(_spec_chain.T, [16, 50, 84], axis=1)
+        
+        return {"lbda":_lbda[_mask_lbda], "spec_chain":_spec_chain, "spec":_spec[_mask_lbda],
+                "spec_low":_spec_low[_mask_lbda], "spec_up":_spec_up[_mask_lbda]}
     
+    #----------------#
+    #   Photometry   #
+    #----------------#
+    def get_synthetic_photometry(self, filter, restframe=False, unit="Hz"):
+        """
+        Return photometry synthesized through the given filter/bandpass.
+        The returned data are (effective wavelength, synthesize flux/mag) in an array with same size as for 'self.spec_chain'.
+
+        Parameters
+        ----------
+        filter : [string, sncosmo.BandPass, 2D array]
+            The filter through which the spectrum will be synthesized.
+            Accepted input format:
+            - string: name of a known filter (instrument.band), the actual bandpass will be grabbed using using data from 'self.obs["filters"]'
+            - 2D array: containing wavelength and transmission --> sncosmo.bandpass.BandPass(*filter)
+            - sncosmo.bandpass.BandPass
+        
+        Options
+        -------
+        restframe : [bool]
+            If True, the spectrum is first deredshifted before doing the synthetic photometry.
+            Default is False.
+
+        unit : [string]
+            Unit of the returned photometry. Available units are:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitude
+            Default is "Hz".
+        
+        
+        Returns
+        -------
+        np.array, np.array
+        """
+        from sncosmo import bandpasses
+        
+        # - Get the corresponding bandpass
+        try:
+            filter = io.filters_to_pysed(filter)[0]
+        except:
+            pass
+        if filter in self.obs["filternames"]:
+            _filter = self.obs["filters"][self.obs["filternames"].index(filter)]
+            _bp = bandpasses.Bandpass(_filter.wavelength, _filter.transmission)
+        elif type(filter) == bandpasses.Bandpass:
+            _bp = filter
+        elif len(filter) == 2:
+            _bp = bandpasses.Bandpass(*filter)
+        else:
+            raise TypeError("'filter' must either be a filter name like filter='sdss.u', "+
+                            "a sncosmo.BandPass or a 2D array filter=[wave, transmission].\n"+
+                            f"Your input : {filter}")
+
+        # - Synthesize through bandpass
+        _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe)
+        _slbda = _bp.wave_eff/(1+self.z) if restframe else _bp.wave_eff
+
+        if unit == "mag":
+            return _slbda, tools.flux_to_mag(_sflux_aa, None, wavelength=_slbda)
+        
+        return _slbda, tools.convert_flux_unit(sflux_aa, "AA", unit, wavelength=slbda_)
+    
+    def synthesize_photometry(self, filter_lbda, filter_trans, restframe=False):
+        """
+        Return the synthetic flux in erg/s/cm2/AA.
+        
+        Parameters
+        ----------
+        filter_lbda, filter_trans : [array, array]
+            Wavelength and transmission of the filter.
+        
+        Options
+        -------
+        restframe : [bool]
+            If True, the spectrum is first deredshifted before doing the synthetic photometry.
+            Default is False.
+        
+        
+        Returns
+        -------
+        float
+        """
+        _spec_data = self.get_spectral_data(restframe=restframe, unit="AA", lbda_lim=(None, None))
+        return tools.synthesize_photometry(_spec_data["lbda"], _spec_data["spec_chain"], filter_lbda, filter_trans, normed=True)
+    
+    def get_phot_data(self, filters=None, restframe=False, unit="mag"):
+        """
+        
+        """
+        if filters is None:
+            filters = self.obs["filternames"]
+        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in filters}
+        _lbda = np.array([_phot_chains[_f][0] for _f in filters])
+        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in filters]).T
+        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up}
+    
+    #--------------#
+    #   Plotting   #
+    #--------------#
     def show(self, ax=None, figsize=[7,3.5], ax_rect=[0.1,0.2,0.8,0.7], unit="Hz", restframe=False,
-             lbda_lim=(None, None), spec_prop={}, spec_unc_prop={}, phot_prop={}, savefile=None):
+             lbda_lim=(None, None), spec_prop={}, spec_unc_prop={},
+             filters=None, phot_prop={}, phot_unc_prop={},
+             savefile=None):
         """
         Plot the spectrum.
         
@@ -109,7 +216,7 @@ class ProspectorSpectrum():
             Default is [0.1,0.2,0.8,0.7].
         
         unit : [string]
-            Flux unit to plot. Available units are:
+            Which unit for the data to be plotted. Available units are:
                 - "Hz": erg/s/cm2/Hz
                 - "AA": erg/s/cm2/AA
                 - "mgy": maggies
@@ -133,6 +240,10 @@ class ProspectorSpectrum():
             Photometry pyplot.scatter kwargs.
             Default is {}.
         
+        phot_unc_prop : [dict]
+            Photometry uncertainties pyplot.errorbar kwargs.
+            Default is {}.
+        
         savefile : [string or None]
             Give a directory to save the figure.
             Default is None (not saved).
@@ -148,11 +259,26 @@ class ProspectorSpectrum():
             ax = fig.add_axes(ax_rect)
         else:
             fig = ax.figure
-            
-        _lbda, _spec, _spec_low, _spec_up = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
-        ax.plot(_lbda, _spec, **spec_prop)
+        
+        # SED
+        if spec_prop:
+            _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
+            ax.plot(_spec_data["lbda"], _spec_data["spec"], **spec_prop)
         if spec_unc_prop:
-            ax.fill_between(_lbda, _spec_low, _spec_up, **spec_unc_prop)
+            if "_spec_data" not in locals():
+                _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
+            ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop)
+        
+        # Photometry
+        if phot_prop:
+            _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
+            ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop)
+        if phot_unc_prop:
+            if "_phot_data" not in locals():
+                _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
+            ax.errobar(_phot_data["lbda"], _phot_data["phot"],
+                       yerr=[_phot_data["phot"]-_phot_data["phot_low"], _phot_data["phot_up"]-_phot_data["phot"]],
+                       **phot_prop)
 
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
         ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
@@ -229,15 +355,26 @@ class ProspectorSpectrum():
             return self.obs["wavelength"]
     
     @property
-    def spectrum_chain(self):
+    def spec_chain(self):
         """ Array containing spectrum chain """
-        if not hasattr(self, "_spectrum_chain"):
+        if not hasattr(self, "_spec_chain"):
             self.load_spectra()
-        return self._spectrum_chain
+        return self._spec_chain
     
     @property
-    def spectrum(self):
+    def spec(self):
         """ Median of the spectrum chain """
-        if not hasattr(self, "_spectrum_chain"):
-            self.load_spectra()
-        return np.median(self.spectrum_chain, axis=1)
+        return np.median(self.spec_chain, axis=1)
+    
+    @property
+    def phot_chains(self):
+        """ DataFrame containing the chain of each filters in self.obs["filternames"] """
+        if not hasattr(self, "_spec_chain"):
+            self.load_phot()
+        return self._phot_chains
+    
+    @property
+    def phot(self):
+        """ Dictionary containing (median, -sigma, +sigma) for each filters in self.obs["filternames"] """
+        _phot = {_f:np.percentiles(_fc, [16, 50, 84]) for _f, _fc in self.phot_chains.items()}
+        return {_f:(_fv[1], _fv[1]-_fv[0], _fv[2]-_fv[1]) for _f, _fv in _phot.items()}

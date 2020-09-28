@@ -52,7 +52,7 @@ def flux_to_mag(flux, dflux=None, wavelength=None, zp=None, inhz=False):
             
     mag_ab = -2.5*np.log10(flux*wavelength**2) + zp
     if dflux is None:
-        return mag_ab, None
+        return mag_ab
     
     dmag_ab = -2.5/np.log(10) * dflux / flux
     return mag_ab, dmag_ab
@@ -104,7 +104,7 @@ def mag_to_flux(mag, magerr=None, wavelength=None, zp=None, inhz=False):
 
     flux = 10**(-(mag-zp)/2.5) / wavelength**2
     if magerr is None:
-        return flux, None
+        return flux
     
     dflux = np.abs(flux*(-magerr/2.5*np.log(10))) # df/f = dcount/count
     return flux, dflux
@@ -262,3 +262,40 @@ def deredshift(lbda=None, flux=None, z=0, variance=None, exp=3):
     
     _out = [ii for ii in [_lbda, _flux, _variance] if ii is not None]
     return _out[0] if len(_out) == 1 else tuple(_out)
+
+def synthesize_photometry(lbda, flux, filter_lbda, filter_trans, normed=True):
+    """
+    Return photometry from the given spectral information through the given filter.
+
+    This function converts the flux into photons since the transmission provides the fraction of photons that goes though.
+
+    Parameters
+    -----------
+    lbda, flux : [array]
+        Wavelength and flux of the spectrum from which you want to synthetize photometry.
+        
+    filter_lbda, filter_trans : [array]
+        Wavelength and transmission of the filter.
+    
+    Options
+    -------
+    normed : [bool]
+        Shall the fitler transmission be normalized (True) or not (False).
+        Default is True.
+
+    Returns
+    -------
+    float (photometric point)
+    """
+    # ---------
+    # The Tool
+    def integrate_photons(lbda, flux, step, flbda, fthroughput):
+        filter_interp = np.interp(lbda, flbda, fthroughput)
+        dphotons = (filter_interp * flux) * lbda * 5.006909561e7
+        return np.trapz(dphotons,lbda) if step is None else np.sum(dphotons*step)
+    
+    # ---------
+    # The Code
+    normband = 1. if not normed else integrate_photons(lbda, np.ones(len(lbda)),None,filter_lbda,filter_trans)
+      
+    return integrate_photons(lbda,flux,None,filter_lbda,filter_trans)/normband
