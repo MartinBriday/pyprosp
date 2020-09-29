@@ -27,6 +27,25 @@ class ProspectorSpectrum():
         self._sps = sps
         self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
     
+    @classmethod
+    def from_h5(cls, filename, warnings=True):
+        """
+        
+        """
+        from .prospector import Prospector
+        import h5py
+        _prosp = Prospector.from_h5(filename=filename, warnings=warnings)
+        _this = cls(chains=_prosp.chains, model=_prosp.model, obs=_prosp.obs, sps=_prosp.sps)
+        with h5py.File(filename, "r") as _h5f:
+            if "spec_chain" in _h5f:
+                import pickle
+                _h5_group = _h5f["spec_chain"].attrs
+                _this._spec_chain = np.array([pickle.loads(_h5_group[str(ii)]) for ii in np.arange(len(_h5_group)-1)])
+                _this._spec_chain = pandas.DataFrame(_this._spec_chain.T)
+                _this._spec_chain.index = pickle.loads(_h5_group["lbda"])
+                _this._spec_chain.index.names = ["lbda"]
+        return _this
+    
     #------------------#
     #   Spectrometry   #
     #------------------#
@@ -36,19 +55,33 @@ class ProspectorSpectrum():
         """
         if size is not None and isinstance(size, int):
             self._mask_chains = np.random.choice(self.len_chains, size, replace=False)
+        else:
+            self._mask_chains = None
         _chains = self.chains[self.mask_chains] if self.has_mask_chains() else self.chains
         self._spec_chain = np.array([self.get_theta_spec(theta=_theta, unit="mgy") for _theta in _chains])
         self._spec_chain = pandas.DataFrame(self._spec_chain.T)
         self._spec_chain.index = self.wavelengths
         self._spec_chain.index.names = ["lbda"]
         if savefile is not None:
-            self.save_spec(savefile=savefile, **kwargs)
+            self.write_spec(savefile=savefile, **kwargs)
     
-    def save_spec(self, savefile, **kwargs):
+    def write_spec(self, savefile, **kwargs):
         """
         
         """
-        self.spec_chain.to_csv(savefile, **kwargs)
+        if savefile.endswith(".h5"):
+            import h5py
+            import pickle
+            with h5py.File(savefile, "a") as _h5f:
+                if "spec_chain" in _h5f:
+                    del _h5f["spec_chain"]
+                _h5_group = _h5f.create_group("spec_chain")
+                _h5_group.attrs["lbda"] = np.void(pickle.dumps(self.wavelengths))
+                for ii, _chain in enumerate(np.array(self.spec_chain).T):
+                    _h5_group.attrs[str(ii)] = np.void(pickle.dumps(_chain))
+                _h5f.flush()
+        else:
+            self.spec_chain.to_csv(savefile, **kwargs)
     
     def get_theta_spec(self, theta, unit="mgy"):
         """
@@ -148,13 +181,13 @@ class ProspectorSpectrum():
                             f"Your input : {filter}")
 
         # - Synthesize through bandpass
-        _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe)
+        _sflux_aa = self.synthesize_photometry(_bp.wave.copy(), _bp.trans.copy(), restframe=restframe)
         _slbda = _bp.wave_eff/(1+self.z) if restframe else _bp.wave_eff
 
         if unit == "mag":
             return _slbda, tools.flux_to_mag(_sflux_aa, None, wavelength=_slbda)
         
-        return _slbda, tools.convert_flux_unit(sflux_aa, "AA", unit, wavelength=slbda_)
+        return _slbda, tools.convert_flux_unit(_sflux_aa, "AA", unit, wavelength=_slbda)
     
     def synthesize_photometry(self, filter_lbda, filter_trans, restframe=False):
         """
@@ -356,25 +389,7 @@ class ProspectorSpectrum():
     
     @property
     def spec_chain(self):
-        """ Array containing spectrum chain """
+        """ Array containing spectrum chain (unit is maggies: "mgy") """
         if not hasattr(self, "_spec_chain"):
             self.load_spectra()
         return self._spec_chain
-    
-    @property
-    def spec(self):
-        """ Median of the spectrum chain """
-        return np.median(self.spec_chain, axis=1)
-    
-    @property
-    def phot_chains(self):
-        """ DataFrame containing the chain of each filters in self.obs["filternames"] """
-        if not hasattr(self, "_spec_chain"):
-            self.load_phot()
-        return self._phot_chains
-    
-    @property
-    def phot(self):
-        """ Dictionary containing (median, -sigma, +sigma) for each filters in self.obs["filternames"] """
-        _phot = {_f:np.percentiles(_fc, [16, 50, 84]) for _f, _fc in self.phot_chains.items()}
-        return {_f:(_fv[1], _fv[1]-_fv[0], _fv[2]-_fv[1]) for _f, _fv in _phot.items()}

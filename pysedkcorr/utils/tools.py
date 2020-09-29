@@ -289,6 +289,8 @@ def synthesize_photometry(lbda, flux, filter_lbda, filter_trans, normed=True):
     """
     # ---------
     # The Tool
+    filter_trans[0] = 0.
+    filter_trans[-1] = 0.
     def integrate_photons(lbda, flux, step, flbda, fthroughput):
         filter_interp = np.interp(lbda, flbda, fthroughput)
         dphotons = (filter_interp * flux) * lbda * 5.006909561e7

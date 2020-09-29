@@ -10,7 +10,6 @@ from warnings import warn
 from pprint import pprint
 
 from . import io
-from . import spectrum
 
 class Prospector():
     """
@@ -573,7 +572,8 @@ class Prospector():
         -------
         Void
         """
-        self._spectrum = spectrum.ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps)
+        from .spectrum import ProspectorSpectrum
+        self._spectrum = ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps)
     
     def write_h5(self, savefile):
         """
