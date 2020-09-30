@@ -728,9 +728,8 @@ class Prospector():
         -------
         dict
         """
-        _chains = [[self.chains[_p][ii] for _p in self.theta_labels] for ii in np.arange(self.len_chains)]
         _data = {"model":self.model,
-                 "chain":np.array(_chains),
+                 "chain":np.array(self.chains),
                  "lnprobability":None}
         return _data
         

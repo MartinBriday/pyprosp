@@ -222,6 +222,37 @@ def get_unit_label(unit):
                "mag":"mag"}
     return _labels[unit]
 
+def fix_trans(lbda, trans):
+    """
+    Check if the transmission curve start and end with zero.
+    Fix it if not.
+    Return the tuple (lbda, trans) (fixed if needed).
+    
+    Parameters
+    ----------
+    lbda : [array]
+        Wavelength of the transmission curve.
+        Must be same size as for 'trans'.
+    
+    trans : [array]
+        Transmission data.
+        Must be same size as for 'lbda'.
+    
+    
+    Returns
+    -------
+    np.array, np.array
+    """
+    _lbda, _trans = np.array(lbda).copy(), np.array(trans).copy()
+    _lbda_step = np.mean([_lbda[ii+1] - _l for ii, _l in enumerate(_lbda[:-1])])
+    if _trans[0] != 0:
+        _lbda = np.insert(_lbda, 0, _lbda[0]-_lbda_step)
+        _trans = np.insert(_trans, 0, 0.)
+    if _trans[-1] != 0:
+        _lbda = np.insert(_lbda, len(_lbda), _lbda[-1]+_lbda_step)
+        _trans = np.insert(_trans, len(_trans), 0.)
+    return _lbda, _trans
+
 def deredshift(lbda=None, flux=None, z=0, variance=None, exp=3):
     """
     Deredshift spectrum from z to 0, and apply a (1+z)**exp flux-correction.
@@ -289,8 +320,6 @@ def synthesize_photometry(lbda, flux, filter_lbda, filter_trans, normed=True):
     """
     # ---------
     # The Tool
-    filter_trans[0] = 0.
-    filter_trans[-1] = 0.
     def integrate_photons(lbda, flux, step, flbda, fthroughput):
         filter_interp = np.interp(lbda, flbda, fthroughput)
         dphotons = (filter_interp * flux) * lbda * 5.006909561e7

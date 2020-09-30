@@ -101,8 +101,7 @@ class ProspectorSpectrum():
         # Deredshift
         if restframe:
             _spec_chain = tools.convert_flux_unit(_spec_chain, _unit_in, "AA", wavelength=_lbda)
-            _spec_chain = tools.deredshift(lbda=None, flux=_spec_chain, z=self.z, variance=None, exp=3)
-            _lbda = tools.deredshift(lbda=_lbda, flux=None, z=self.z, variance=None, exp=3)
+            _lbda, _spec_chain = tools.deredshift(lbda=_lbda, flux=_spec_chain, z=self.z, variance=None, exp=3)
             _unit_in = "AA"
         
         # Change unit
@@ -170,18 +169,20 @@ class ProspectorSpectrum():
             pass
         if filter in self.obs["filternames"]:
             _filter = self.obs["filters"][self.obs["filternames"].index(filter)]
-            _bp = bandpasses.Bandpass(_filter.wavelength, _filter.transmission)
+            _lbda, _trans = tools.fix_trans(_filter.wavelength, _filter.transmission)
+            _bp = bandpasses.Bandpass(_lbda, _trans)
         elif type(filter) == bandpasses.Bandpass:
             _bp = filter
         elif len(filter) == 2:
-            _bp = bandpasses.Bandpass(*filter)
+            _lbda, _trans = tools.fix_trans(*filter)
+            _bp = bandpasses.Bandpass(_lbda, _trans)
         else:
             raise TypeError("'filter' must either be a filter name like filter='sdss.u', "+
                             "a sncosmo.BandPass or a 2D array filter=[wave, transmission].\n"+
                             f"Your input : {filter}")
 
         # - Synthesize through bandpass
-        _sflux_aa = self.synthesize_photometry(_bp.wave.copy(), _bp.trans.copy(), restframe=restframe)
+        _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe)
         _slbda = _bp.wave_eff/(1+self.z) if restframe else _bp.wave_eff
 
         if unit == "mag":
@@ -217,19 +218,56 @@ class ProspectorSpectrum():
         
         """
         if filters is None:
-            filters = self.obs["filternames"]
+            filters = np.array(self.obs["filternames"])
+        elif filters == "mask":
+            filters = np.array(self.obs["filternames"])[self.obs["phot_mask"]]
+        else:
+            filters = np.atleast_1d(filters)
         _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in filters}
         _lbda = np.array([_phot_chains[_f][0] for _f in filters])
         _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in filters]).T
         return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up}
+    
+    def get_phot_obs(self, filters="mask", restframe=False, unit="mag"):
+        """
+        
+        """
+        if filters is None:
+            filters = np.array(self.obs["filternames"])
+        elif filters == "mask":
+            filters = np.array(self.obs["filternames"])[self.obs["phot_mask"]]
+        else:
+            filters = np.atleast_1d(filters)
+            try:
+                filters = np.array([(_f if _f in self.obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in filters])
+            except KeyError:
+                raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
+                                 "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
+        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in filters]
+        _filters = np.array(self.obs["filters"])[_filt_flag]
+        _lbda = np.array([_f.wave_average for _f in _filters])
+        _phot = np.array(self.obs["maggies"])[_filt_flag]
+        _phot_unc = np.array(self.obs["maggies_unc"])[_filt_flag]
+        _unit_in = "mgy"
+        
+        if restframe:
+            _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, "AA", wavelength=_lbda)
+            _lbda, _phot, _phot_unc = tools.deredshift(lbda=_lbda, flux=_phot, z=self.z, variance=_phot_unc**2, exp=3)
+            _unit_in = "AA"
+        
+        _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
+        if unit == "mag":
+            _phot, _phot_unc = tools.flux_to_mag(_phot, dflux=_phot_unc, wavelength=_lbda, zp=None, inhz=False)
+        
+        return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc}
     
     #--------------#
     #   Plotting   #
     #--------------#
     def show(self, ax=None, figsize=[7,3.5], ax_rect=[0.1,0.2,0.8,0.7], unit="Hz", restframe=False,
              lbda_lim=(None, None), spec_prop={}, spec_unc_prop={},
-             filters=None, phot_prop={}, phot_unc_prop={},
-             savefile=None):
+             filters=None, phot_prop={}, phot_unc_prop={}, show_obs={},
+             show_legend={}, savefile=None):
         """
         Plot the spectrum.
         
@@ -260,21 +298,33 @@ class ProspectorSpectrum():
             If True, the spectrum is first deredshifted before doing the synthetic photometry.
             Default is False.
         
-        spec_prop : [dict]
+        spec_prop : [dict or None]
             Spectrum pyplot.plot kwargs.
+            If bool(spec_prop) == False, the spectrum is not plotted.
             Default is {}.
         
-        spec_unc_prop : [dict]
+        spec_unc_prop : [dict or None]
             Spectrum uncertainties pyplot.fill_between kwargs.
-            If {}, the uncertainties are not plotted.
+            If bool(spec_unc_prop) == False, the uncertainties are not plotted.
             Default is {}.
         
-        phot_prop : [dict]
+        phot_prop : [dict or None]
             Photometry pyplot.scatter kwargs.
+            If bool(phot_prop) == False, the photometric points are not plotted.
             Default is {}.
         
-        phot_unc_prop : [dict]
+        phot_unc_prop : [dict or None]
             Photometry uncertainties pyplot.errorbar kwargs.
+            If bool(phot_unc_prop) == False, the photometric uncertainties are not plotted.
+            Default is {}.
+        
+        show_obs : [dict or None]
+            Observed photometry uncertainties pyplot.errorbar kwargs.
+            If bool(show_obs) == False, the observed photometric points are not plotted.
+            Default is {}.
+        
+        show_legend : [dict or None]
+            If True, plot the legend.
             Default is {}.
         
         savefile : [string or None]
@@ -287,34 +337,51 @@ class ProspectorSpectrum():
         
         """
         import matplotlib.pyplot as plt
+        import matplotlib.lines as mlines
         if ax is None:
             fig = plt.figure(figsize=figsize)
             ax = fig.add_axes(ax_rect)
         else:
             fig = ax.figure
         
+        _handles = []
+        _labels = []
         # SED
         if spec_prop:
             _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
             ax.plot(_spec_data["lbda"], _spec_data["spec"], **spec_prop)
+            _handles.append(mlines.Line2D([], [], **spec_prop))
+            _labels.append("Fitted spectrum")
         if spec_unc_prop:
             if "_spec_data" not in locals():
                 _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
-            ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop)
+            _handles.append(ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop))
+            _labels.append(r"1-$\sigma$ fitted spectrum")
         
         # Photometry
         if phot_prop:
             _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop)
+            _handles.append(ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop))
+            _labels.append("Fitted photometry")
         if phot_unc_prop:
             if "_phot_data" not in locals():
                 _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            ax.errobar(_phot_data["lbda"], _phot_data["phot"],
-                       yerr=[_phot_data["phot"]-_phot_data["phot_low"], _phot_data["phot_up"]-_phot_data["phot"]],
-                       **phot_prop)
+            _handles.append(ax.errorbar(_phot_data["lbda"], _phot_data["phot"],
+                                        yerr=[_phot_data["phot"]-_phot_data["phot_low"],
+                                              _phot_data["phot_up"]-_phot_data["phot"]],
+                                        **phot_unc_prop))
+            _labels.append(r"1-$\sigma$ fitted photometry")
+        
+        if show_obs:
+            _phot_obs = self.get_phot_obs(filters=filters, restframe=restframe, unit=unit)
+            _handles.append(ax.errorbar(_phot_obs["lbda"], _phot_obs["phot"], yerr=_phot_obs["phot_unc"], **show_obs))
+            _labels.append("Observed photometry")
 
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
         ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
+        
+        if show_legend:
+            ax.legend(_handles, _labels, **show_legend)
         
         if savefile is not None:
             fig.savefig(savefile)
