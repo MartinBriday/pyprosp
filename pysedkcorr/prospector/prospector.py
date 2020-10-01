@@ -64,7 +64,7 @@ class Prospector():
     def set_data(self, phot=None, spec=None, unit="Hz", z=None, name=None):
         """
         Set up input data as attributes.
-        Either 'phot' or 'spec' must be given.
+        At least one of 'phot' or 'spec' must be given.
         
         Parameters
         ----------
@@ -624,6 +624,9 @@ class Prospector():
         """
         import h5py
         import pickle
+        
+        if not filename.endswith(".h5"):
+            raise ValueError(f"You must give a .h5 file (your input: {filename}).")
         
         _this = cls()
         

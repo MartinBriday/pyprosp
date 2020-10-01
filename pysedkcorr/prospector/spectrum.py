@@ -12,14 +12,55 @@ class ProspectorSpectrum():
     
     def __init__(self, **kwargs):
         """
+        Initialization.
+        Can run 'set_data'.
         
+        Options
+        -------
+        chains : [np.array]
+            Fitted parameter chains.
+            Shape must be (nb of fitting step, nb of fitted parameters).
+        
+        model : [prospect.models.sedmodel.SedModel]
+            Prospector model object.
+        
+        obs : [dict]
+            Prospector compatible 'obs' dictionary.
+        
+        sps : [SPS object]
+            Prospector SPS object.
+        
+        
+        Returns
+        -------
+        Void
         """
         if kwargs != {}:
             self.set_data(**kwargs)
     
     def set_data(self, chains, model, obs, sps):
         """
+        Set up input data as attributes.
         
+        Parameters
+        ----------
+        chains : [np.array]
+            Fitted parameter chains.
+            Shape must be (nb of fitting step, nb of fitted parameters).
+        
+        model : [prospect.models.sedmodel.SedModel]
+            Prospector model object.
+        
+        obs : [dict]
+            Prospector compatible 'obs' dictionary.
+        
+        sps : [SPS object]
+            Prospector SPS object.
+        
+        
+        Returns
+        -------
+        Void
         """
         self._chains = chains
         self._model = model
@@ -30,30 +71,123 @@ class ProspectorSpectrum():
     @classmethod
     def from_h5(cls, filename, warnings=True):
         """
+        Build a ProspectorSpectrum object directly from a .h5 file containing the results of a prospector fit.
+        If the given file contains the spectrum chain, it will be automatically loaded.
         
+        Parameters
+        ----------
+        filename : [string]
+            File name/directory containing prospector fit results.
+            Must be a .h5 file.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        ProspectorSpectrum
         """
         from .prospector import Prospector
         import h5py
         _prosp = Prospector.from_h5(filename=filename, warnings=warnings)
         _this = cls(chains=_prosp.chains, model=_prosp.model, obs=_prosp.obs, sps=_prosp.sps)
         with h5py.File(filename, "r") as _h5f:
-            if "spec_chain" in _h5f:
-                import pickle
-                _h5_group = _h5f["spec_chain"].attrs
-                _this._spec_chain = np.array([pickle.loads(_h5_group[str(ii)]) for ii in np.arange(len(_h5_group)-1)])
-                _this._spec_chain = pandas.DataFrame(_this._spec_chain.T)
-                _this._spec_chain.index = pickle.loads(_h5_group["lbda"])
-                _this._spec_chain.index.names = ["lbda"]
+            _this._spec_chain = _this.read_file(filename=filename, warnings=warnings)
         return _this
+    
+    @staticmethod
+    def read_file(filename, warnings=True, **kwargs):
+        """
+        Extract and return the spectrum chain dataframe from the given file.
+        
+        Parameters
+        ----------
+        filename : [string]
+            File name/directory from which to extract the dataframe.
+            If a .h5 file is given, data must be saved as attributes in the group named "spec_chain".
+            Else, return pandas.read_csv(filename, **kwargs).
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        **kwargs
+            pandas.DataFrame.to_csv kwargs.
+            
+        Returns
+        -------
+        pandas.DataFrame
+        """
+        import h5py
+        if filename.endswith(".h5"):
+            with h5py.File(filename, "r") as _h5f:
+                if "spec_chain" in _h5f:
+                    import pickle
+                    _h5_group = _h5f["spec_chain"].attrs
+                    _spec_chain = np.array([pickle.loads(_h5_group[str(ii)]) for ii in np.arange(len(_h5_group)-1)])
+                    _spec_chain = pandas.DataFrame(_spec_chain.T)
+                    try:
+                        _spec_chain.index = pickle.loads(_h5_group["lbda"])
+                        _spec_chain.index.names = ["lbda"]
+                    except KeyError:
+                        if warnings:
+                            warn("No wavelengths found in the file. You can find them with a SPS object ('wavelengths' attribute).")
+                    return _spec_chain
+        return pandas.read_csv(filename, **kwargs)
     
     #------------------#
     #   Spectrometry   #
     #------------------#
-    def load_spectra(self, size=None, savefile=None, **kwargs):
+    def load_spectra(self, from_file=None, size=None, savefile=None, warnings=True, **kwargs):
         """
+        Build a dataframe of the spectrum chain and set it as attribute.
         
+        Options
+        -------
+        from_file : [string or None]
+            File name/directory from which to extract the dataframe.
+            If a .h5 file is given, data must be saved as attributes in the group named "spec_chain".
+            Else, return pandas.read_csv(filename, **kwargs).
+            Default is None.
+        
+        size : [int or None]
+            Number of step to build the spectrum chain.
+            Must be lower than the total number of fit steps.
+            The parameter sets building the spectra are randomly chosen over the parameter chains.
+            If None, the whole chains are used.
+            Default is None.
+        
+        savefile : [string or None]
+            Save the built dataframe in the given file name.
+            (see 'write_spec' method for more details).
+            Default is None (meaning not saved).
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        **kwargs
+            pandas.read_csv kwargs.
+            pandas.DataFrame.to_csv kwargs.
+        
+        
+        Returns
+        -------
+        Void
         """
+        if from_file:
+            self._spec_chain = self.read_file(from_file, warnings=warnings, **kwargs)
+            return
+        
         if size is not None and isinstance(size, int):
+            if size > self.len_chains:
+                raise ValueError(f"'size' must lower than the number of fit steps (= {self.len_chains}) (your input: {size}).")
             self._mask_chains = np.random.choice(self.len_chains, size, replace=False)
         else:
             self._mask_chains = None
@@ -67,7 +201,22 @@ class ProspectorSpectrum():
     
     def write_spec(self, savefile, **kwargs):
         """
+        Save the spectrum chain dataframe into a given file.
         
+        Parameters
+        ----------
+        savefile : [string or None]
+            File name/directory to save the spectrum chain dataframe in.
+            If a .h5 is given, create a group which will contain every spectrum step and the wavelengths as attributes.
+            Else, execute pandas.DataFrame.to_csv(savefile, **kwargs) method.
+        
+        **kwargs
+            pandas.DataFrame.to_csv kwargs.
+        
+        
+        Returns
+        -------
+        Void
         """
         if savefile.endswith(".h5"):
             import h5py
@@ -85,14 +234,65 @@ class ProspectorSpectrum():
     
     def get_theta_spec(self, theta, unit="mgy"):
         """
+        Build and return a spectrum giving a set of parameters (running prospect.models.sedmodel.SedModel.sed())
+        The corresponding wavelengths can be found in 'wavelengths' attribute (coming from self.sps.wavelengths).
         
+        Parameters
+        ----------
+        theta : [list]
+            Set of parameters to give to the SedModel to generate a spectrum.
+            The parameter names are saved in 'theta_labels' attribute.
+        
+        unit : [string]
+            Unit of the returned spectrum. Available units are:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitude
+            Default is "mgy".
+        
+        
+        Returns
+        -------
+        np.array
         """
         _spec, _, _ = self.model.sed(theta, obs=self.obs, sps=self.sps)
-        return tools.convert_flux_unit(_spec, "mgy", unit, self.wavelengths)
+        return tools.convert_unit(_spec, "mgy", unit, wavelength=self.wavelengths)
     
     def get_spectral_data(self, restframe=False, unit="Hz", lbda_lim=(None, None)):
         """
+        Return a dictionary of the treated spectral data.
+        The dictionary contains:
+            - "lbda": the wavelength array of the spectrum
+            - "spec_chain": the treated spectrum chain
+            - "spec": the treated spectrum chain median.
+            - "spec_low", "spec_up": 16% and 84% resp. of the spectrum chain
         
+        Parameters
+        ----------
+        restframe : [bool]
+            If True, the returned spectrum is restframed.
+            Default is False.
+        
+        unit : [string]
+            Unit of the returned spectrum. Available units are:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitude
+            Default is "Hz".
+        
+        lbda_lim : [tuple(float or None, float or None)]
+            Limits on wavelength (thus in AA) to mask the spectrum.
+            None for a limit means that the spectrum is not masked in the corresponding direction.
+            Default is (None, None).
+        
+        
+        Returns
+        -------
+        dict
         """
         _lbda = self.wavelengths.copy()
         _spec_chain = np.array(self.spec_chain.T)
@@ -105,9 +305,7 @@ class ProspectorSpectrum():
             _unit_in = "AA"
         
         # Change unit
-        _spec_chain = tools.convert_flux_unit(_spec_chain, _unit_in, unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
-        if unit == "mag":
-            _spec_chain = tools.flux_to_mag(_spec_chain, dflux=None, wavelength=_lbda, zp=None, inhz=False)
+        _spec_chain = tools.convert_unit(_spec_chain, _unit_in, unit, wavelength=_lbda)
         
         # Build the mask given by the wavelength desired limits
         _mask_lbda = np.ones(len(_lbda), dtype = bool)
@@ -184,11 +382,8 @@ class ProspectorSpectrum():
         # - Synthesize through bandpass
         _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe)
         _slbda = _bp.wave_eff/(1+self.z) if restframe else _bp.wave_eff
-
-        if unit == "mag":
-            return _slbda, tools.flux_to_mag(_sflux_aa, None, wavelength=_slbda)
         
-        return _slbda, tools.convert_flux_unit(_sflux_aa, "AA", unit, wavelength=_slbda)
+        return _slbda, tools.convert_unit(_sflux_aa, "AA", unit, wavelength=_slbda)
     
     def synthesize_photometry(self, filter_lbda, filter_trans, restframe=False):
         """
@@ -250,14 +445,15 @@ class ProspectorSpectrum():
         _phot_unc = np.array(self.obs["maggies_unc"])[_filt_flag]
         _unit_in = "mgy"
         
+        # Deredshift
         if restframe:
             _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, "AA", wavelength=_lbda)
             _lbda, _phot, _phot_unc = tools.deredshift(lbda=_lbda, flux=_phot, z=self.z, variance=_phot_unc**2, exp=3)
             _unit_in = "AA"
         
-        _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
-        if unit == "mag":
-            _phot, _phot_unc = tools.flux_to_mag(_phot, dflux=_phot_unc, wavelength=_lbda, zp=None, inhz=False)
+        # Change unit
+        _phot, _phot_unc = tools.convert_unit(data=_phot, data_unc=_phot_unc, unit_in=_unit_in,
+                                              unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
         
         return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc}
     
@@ -337,6 +533,7 @@ class ProspectorSpectrum():
         
         """
         import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
         import matplotlib.lines as mlines
         if ax is None:
             fig = plt.figure(figsize=figsize)
@@ -347,30 +544,40 @@ class ProspectorSpectrum():
         _handles = []
         _labels = []
         # SED
+        _h_spec = []
+        _l_spec = []
         if spec_prop:
             _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
             ax.plot(_spec_data["lbda"], _spec_data["spec"], **spec_prop)
-            _handles.append(mlines.Line2D([], [], **spec_prop))
-            _labels.append("Fitted spectrum")
+            _h_spec.append(mlines.Line2D([], [], **spec_prop))
+            _l_spec.append("Fitted spectrum")
         if spec_unc_prop:
             if "_spec_data" not in locals():
                 _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
-            _handles.append(ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop))
-            _labels.append(r"1-$\sigma$ fitted spectrum")
+            _h_spec.insert(0, ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop))
+            _l_spec.append(r"1-$\sigma$ spectrum confidence")
+        if _h_spec and _l_spec:
+            _handles.append(tuple(_h_spec))
+            _labels.append("\n".join(_l_spec))
         
         # Photometry
+        _h_phot = []
+        _l_phot = []
         if phot_prop:
             _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            _handles.append(ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop))
-            _labels.append("Fitted photometry")
+            _h_phot.append(ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop))
+            _l_phot.append("Fitted photometry")
         if phot_unc_prop:
             if "_phot_data" not in locals():
                 _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            _handles.append(ax.errorbar(_phot_data["lbda"], _phot_data["phot"],
-                                        yerr=[_phot_data["phot"]-_phot_data["phot_low"],
-                                              _phot_data["phot_up"]-_phot_data["phot"]],
-                                        **phot_unc_prop))
-            _labels.append(r"1-$\sigma$ fitted photometry")
+            _h_phot.insert(0, ax.errorbar(_phot_data["lbda"], _phot_data["phot"],
+                                          yerr=[_phot_data["phot"]-_phot_data["phot_low"],
+                                                _phot_data["phot_up"]-_phot_data["phot"]],
+                                          **phot_unc_prop))
+            _l_phot.append(r"1-$\sigma$ photometry confidence")
+        if _h_phot and _l_phot:
+            _handles.append(tuple(_h_phot))
+            _labels.append("\n".join(_l_phot))
         
         if show_obs:
             _phot_obs = self.get_phot_obs(filters=filters, restframe=restframe, unit=unit)

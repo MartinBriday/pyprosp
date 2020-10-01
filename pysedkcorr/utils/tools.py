@@ -36,7 +36,7 @@ def flux_to_mag(flux, dflux=None, wavelength=None, zp=None, inhz=False):
         
     Returns
     -------
-    - float or array (if magerr is None)
+    - float or array, None (if magerr is None)
     - float or array, float or array (if magerr provided)
     """
     if inhz:
@@ -52,7 +52,7 @@ def flux_to_mag(flux, dflux=None, wavelength=None, zp=None, inhz=False):
             
     mag_ab = -2.5*np.log10(flux*wavelength**2) + zp
     if dflux is None:
-        return mag_ab
+        return mag_ab, None
     
     dmag_ab = -2.5/np.log(10) * dflux / flux
     return mag_ab, dmag_ab
@@ -88,7 +88,7 @@ def mag_to_flux(mag, magerr=None, wavelength=None, zp=None, inhz=False):
 
     Returns
     -------
-    - float or array (if magerr is None)
+    - float or array, None (if magerr is None)
     - float or array, float or array (if magerr provided)
     """
     if inhz:
@@ -104,7 +104,7 @@ def mag_to_flux(mag, magerr=None, wavelength=None, zp=None, inhz=False):
 
     flux = 10**(-(mag-zp)/2.5) / wavelength**2
     if magerr is None:
-        return flux
+        return flux, None
     
     dflux = np.abs(flux*(-magerr/2.5*np.log(10))) # df/f = dcount/count
     return flux, dflux
@@ -196,6 +196,63 @@ def convert_flux_unit(flux, unit_in, unit_out, wavelength=None):
         _flux *= 1e23
         return _flux / 3631 if unit_out == "mgy" else _flux
     return _flux
+
+def convert_unit(data, unit_in, unit_out, data_unc=None, wavelength=None):
+    """
+    Convert data between units of flux or magnitude.
+    
+    Parameters
+    ----------
+    data : [float or array]
+        Data to convert.
+    
+    data_unc : [float or array or None]
+        Data uncertaint.y.ies.
+    
+    unit_in : [string]
+        Input data unit.
+        Available units are:
+            - "Hz": erg/s/cm2/Hz
+            - "AA": erg/s/cm2/AA
+            - "mgy": maggies
+            - "Jy": Jansky
+            - "mag": magnitude
+    
+    unit_out : [string]
+        Desired output data unit.
+        Available units are:
+            - "Hz": erg/s/cm2/Hz
+            - "AA": erg/s/cm2/AA
+            - "mgy": maggies
+            - "Jy": Jansky
+            - "mag": magnitude
+    
+    wavelength : [string]
+        Wavelengths corresponding to the given data.
+        Not necessary in every conversions.
+        Default is None.
+    
+    
+    Returns
+    -------
+    - float or array, None (if data_unc is None)
+    - float or array, float or array (if data_unc provided)
+    """
+    if unit_in == unit_out:
+        return data if not data_unc else (data, data_unc)
+    
+    if unit_in == "mag":
+        data, data_unc = mag_to_flux(data, magerr=data_unc, wavelength=wavelength, zp=None, inhz=False)
+        unit_in = "AA"
+    
+    data = convert_flux_unit(data, unit_in, ("AA" if unit_out=="mag" else unit_out), wavelength)
+    if data_unc is not None:
+        data_unc = convert_flux_unit(data_unc, unit_in, ("AA" if unit_out=="mag" else unit_out), wavelength)
+    
+    if unit_out == "mag":
+        data, data_unc = flux_to_mag(data, dflux=data_unc, wavelength=wavelength, zp=None, inhz=False)
+    
+    return data if data_unc is None else (data, data_unc)
 
 def get_unit_label(unit):
     """
