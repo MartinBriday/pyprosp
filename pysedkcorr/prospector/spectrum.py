@@ -131,13 +131,8 @@ class ProspectorSpectrum():
                     import pickle
                     _h5_group = _h5f["spec_chain"].attrs
                     _spec_chain = np.array([pickle.loads(_h5_group[str(ii)]) for ii in np.arange(len(_h5_group)-1)])
-                    _spec_chain = pandas.DataFrame(_spec_chain.T)
-                    try:
-                        _spec_chain.index = pickle.loads(_h5_group["lbda"])
-                        _spec_chain.index.names = ["lbda"]
-                    except KeyError:
-                        if warnings:
-                            warn("No wavelengths found in the file. You can find them with a SPS object ('wavelengths' attribute).")
+                    _lbda = pickle.loads(_h5_group["lbda"]) if "lbda" in _h5_group else None
+                    self._spec_chain = self._build_spec_chain_dataframe_(_spec_chain, _lbda, warnings)
                     return _spec_chain
         return pandas.read_csv(filename, **kwargs)
     
@@ -192,10 +187,8 @@ class ProspectorSpectrum():
         else:
             self._mask_chains = None
         _chains = self.chains[self.mask_chains] if self.has_mask_chains() else self.chains
-        self._spec_chain = np.array([self.get_theta_spec(theta=_theta, unit="mgy") for _theta in _chains])
-        self._spec_chain = pandas.DataFrame(self._spec_chain.T)
-        self._spec_chain.index = self.wavelengths
-        self._spec_chain.index.names = ["lbda"]
+        _spec_chain = np.array([self.get_theta_spec(theta=_theta, unit="mgy") for _theta in _chains])
+        self._spec_chain = self._build_spec_chain_dataframe_(_spec_chain, self.wavelengths, warnings)
         if savefile is not None:
             self.write_spec(savefile=savefile, **kwargs)
     
@@ -308,18 +301,76 @@ class ProspectorSpectrum():
         _spec_chain = tools.convert_unit(_spec_chain, _unit_in, unit, wavelength=_lbda)
         
         # Build the mask given by the wavelength desired limits
-        _mask_lbda = np.ones(len(_lbda), dtype = bool)
-        if isinstance(lbda_lim, tuple) and len(lbda_lim) == 2:
-            _lim_low, _lim_up = lbda_lim
-            if _lim_low is not None:
-                _mask_lbda &= _lbda > _lim_low
-            if _lim_up is not None:
-                _mask_lbda &= _lbda < _lim_up
+        _mask_lbda = self._build_spec_mask_(_lbda, lbda_lim)
         
+        # Get the median and 1-sigma statistics
         _spec_low, _spec, _spec_up = np.percentile(_spec_chain.T, [16, 50, 84], axis=1)
         
         return {"lbda":_lbda[_mask_lbda], "spec_chain":_spec_chain, "spec":_spec[_mask_lbda],
                 "spec_low":_spec_low[_mask_lbda], "spec_up":_spec_up[_mask_lbda]}
+    
+    @staticmethod
+    def _build_spec_chain_dataframe_(spec_chain, lbda=None, warnings=True):
+        """
+        Build and return a dataframe of the spectrum chain.
+        
+        Parameters
+        ----------
+        spec_chain : [np.array]
+            Array containing the spectrum chain.
+        
+        lbda : [np.array or None]
+            Corresponding wavelengths.
+            Set it as index of the dataframe, if not None.
+            Default is None.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+        _spec_chain = pandas.DataFrame(_spec_chain.T)
+        if lbda is not None:
+            _spec_chain.index = lbda
+            _spec_chain.index.names = ["lbda"]
+        else:
+            warn("No wavelengths set.")
+        return _spec_chain
+    
+    @staticmethod
+    def _build_spec_mask_(lbda, lbda_lim=(None, None)):
+        """
+        Build and return a boolean array to apply a mask on spectrum.
+        
+        Parameters
+        ----------
+        lbda : [np.array]
+            Wavelength array.
+        
+        lbda_lim : [tuple(float or None, float or None)]
+            Limits on wavelength (thus in AA) to mask the spectrum.
+            None for a limit means that the spectrum is not masked in the corresponding direction.
+            Default is (None, None).
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        _mask_lbda = np.ones(len(lbda), dtype = bool)
+        if isinstance(lbda_lim, tuple) and len(lbda_lim) == 2:
+            _lim_low, _lim_up = lbda_lim
+            if _lim_low is not None:
+                _mask_lbda &= lbda > _lim_low
+            if _lim_up is not None:
+                _mask_lbda &= lbda < _lim_up
+        return _mask_lbda
     
     #----------------#
     #   Photometry   #
@@ -410,35 +461,85 @@ class ProspectorSpectrum():
     
     def get_phot_data(self, filters=None, restframe=False, unit="mag"):
         """
+        Build and return a dictionary containing photometry data extracted from the fitted spectrum.
+        The dictionary contains:
+            - "lbda": the wavelength array of the filters
+            - "phot_chains": the extracted photometry chains
+            - "phot": the extracted photometry chain medians.
+            - "phot_low", "phot_up": 16% and 84% resp. of the extracted photometry chains
+            - "filters": the filters names
         
+        Parameters
+        ----------
+        filters : [string or list(string) or None]
+            List of filters from which to get the photometry.
+            Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
+            If None, extract photometry for the whole list of filters availble in 'obs' attribute.
+            If "mask", extract photometry for the filters used in the SED fitting.
+            Default is None.
+        
+        restframe : [bool]
+            If True, the spectrum is first deredshifted before doing the synthetic photometry.
+            Default is False.
+        
+        unit : [string]
+            Unit of the returned photometry. Available units are:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitude
+            Default is "Hz".
+        
+        
+        Returns
+        -------
+        dict
         """
-        if filters is None:
-            filters = np.array(self.obs["filternames"])
-        elif filters == "mask":
-            filters = np.array(self.obs["filternames"])[self.obs["phot_mask"]]
-        else:
-            filters = np.atleast_1d(filters)
-        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in filters}
-        _lbda = np.array([_phot_chains[_f][0] for _f in filters])
-        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in filters]).T
-        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up}
+        _filters = self._build_filters_(filters, self.obs)
+        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in _filters}
+        _lbda = np.array([_phot_chains[_f][0] for _f in _filters])
+        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in _filters]).T
+        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filters}
     
     def get_phot_obs(self, filters="mask", restframe=False, unit="mag"):
         """
+        Build and return a dictionary containing photometry data used for SED fitting.
+        The dictionary contains:
+            - "lbda": the wavelength array of the filters
+            - "phot": observed photometry
+            - "phot_unc": observed photometry uncertainty
+            - "filters": the filters names
         
+        Parameters
+        ----------
+        filters : [string or list(string) or None]
+            List of filters from which to get the photometry.
+            Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
+            If None, extract photometry for the whole list of filters availble in 'obs' attribute.
+            If "mask", extract photometry for the filters used in the SED fitting.
+            Default is None.
+        
+        restframe : [bool]
+            If True, the spectrum is first deredshifted before doing the synthetic photometry.
+            Default is False.
+        
+        unit : [string]
+            Unit of the returned photometry. Available units are:
+                - "Hz": erg/s/cm2/Hz
+                - "AA": erg/s/cm2/AA
+                - "mgy": maggies
+                - "Jy": Jansky
+                - "mag": magnitude
+            Default is "Hz".
+        
+        
+        Returns
+        -------
+        dict
         """
-        if filters is None:
-            filters = np.array(self.obs["filternames"])
-        elif filters == "mask":
-            filters = np.array(self.obs["filternames"])[self.obs["phot_mask"]]
-        else:
-            filters = np.atleast_1d(filters)
-            try:
-                filters = np.array([(_f if _f in self.obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in filters])
-            except KeyError:
-                raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
-                                 "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
-        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in filters]
+        _filternames = self._build_filters_(filters, self.obs)
+        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in _filternames]
         _filters = np.array(self.obs["filters"])[_filt_flag]
         _lbda = np.array([_f.wave_average for _f in _filters])
         _phot = np.array(self.obs["maggies"])[_filt_flag]
@@ -446,16 +547,51 @@ class ProspectorSpectrum():
         _unit_in = "mgy"
         
         # Deredshift
-        if restframe:
-            _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, "AA", wavelength=_lbda)
-            _lbda, _phot, _phot_unc = tools.deredshift(lbda=_lbda, flux=_phot, z=self.z, variance=_phot_unc**2, exp=3)
-            _unit_in = "AA"
+        #if restframe:
+        #    _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, "AA", wavelength=_lbda)
+        #    _lbda, _phot, _phot_unc = tools.deredshift(lbda=_lbda, flux=_phot, z=self.z, variance=_phot_unc**2, exp=3)
+        #    _unit_in = "AA"
         
         # Change unit
         _phot, _phot_unc = tools.convert_unit(data=_phot, data_unc=_phot_unc, unit_in=_unit_in,
                                               unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
         
-        return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc}
+        return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc, "filters":_filternames}
+    
+    @staticmethod
+    def _build_filters_(filters, obs):
+        """
+        Build and return an array of compatible filters.
+        
+        Parameters
+        ----------
+        filters : [string or list(string) or None]
+            List of filters from which to get the photometry.
+            Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
+            If None, extract photometry for the whole list of filters availble in 'obs'.
+            If "mask", extract photometry for the filters used in the SED fitting.
+            Default is None.
+        
+        obs : [dict]
+            Prospector compatible 'obs' dictionary.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        if filters is None:
+            _filters = tools.pysed_to_filters(obs["filternames"])
+        elif filters == "mask":
+            _filters = tools.pysed_to_filters(obs["filternames"])[obs["phot_mask"]]
+        else:
+            _filters = np.atleast_1d(filters)
+            try:
+                _filters = tools.pysed_to_filters([(_f if _f in obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in _filters])
+            except KeyError:
+                raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
+                                 "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
+        return _filters
     
     #--------------#
     #   Plotting   #
@@ -466,6 +602,7 @@ class ProspectorSpectrum():
              show_legend={}, savefile=None):
         """
         Plot the spectrum.
+        Return the figure and the axe: {"fig":pyplot.Figure, "ax":pyplot.Axes}.
         
         Options
         -------
@@ -491,8 +628,13 @@ class ProspectorSpectrum():
                 - "mag": magnitude
         
         restframe : [bool]
-            If True, the spectrum is first deredshifted before doing the synthetic photometry.
+            If True, data will be deredshifted.
             Default is False.
+        
+        lbda_lim : [tuple(float or None, float or None)]
+            Limits on wavelength (thus in AA) to mask the spectrum.
+            None for a limit means that the spectrum is not masked in the corresponding direction.
+            Default is (None, None).
         
         spec_prop : [dict or None]
             Spectrum pyplot.plot kwargs.
@@ -503,6 +645,13 @@ class ProspectorSpectrum():
             Spectrum uncertainties pyplot.fill_between kwargs.
             If bool(spec_unc_prop) == False, the uncertainties are not plotted.
             Default is {}.
+        
+        filters : [string or list(string) or None]
+            List of filters from which to get the photometry.
+            Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
+            If None, extract photometry for the whole list of filters availble in 'obs'.
+            If "mask", extract photometry for the filters used in the SED fitting.
+            Default is None.
         
         phot_prop : [dict or None]
             Photometry pyplot.scatter kwargs.
@@ -530,7 +679,7 @@ class ProspectorSpectrum():
         
         Returns
         -------
-        
+        dict
         """
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
