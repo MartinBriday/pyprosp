@@ -352,40 +352,99 @@ class Prospector():
         #Changes
         _describe_priors = []
         if changes is not None:
-            _changes = changes.copy()
-            for _p, _pv in _changes.items():
-                if _p not in _model.keys():
-                    if warnings:
-                        warn("'{}' is not included in model parameters. Adding it...".format(_p))
-                    #_changes.pop(_p)
-                    _model[_p] = _pv
-                for _k, _kv in _pv.items():
-                    if _k not in _model[_p].keys():
-                        if warnings:
-                            warn("'{}' is not included in '{}' model parameters. Adding it...".format(_k, _p))
-                        #_pv.pop(_k)
-                        _model[_p][_k] = _kv
-                    if _k == "prior" and type(_kv) == dict:
-                        _describe_priors.append(_kv)
-                        _pv[_k] = self.build_prior(_kv)
-                _model[_p].update(_pv)
+            _model, _describe_priors = self._model_changes_(_model, changes)
         if describe and len(_describe_priors) > 0:
             self.describe_priors(_describe_priors)
         
         #Removing
         if removing is not None:
-            for _t in np.atleast_1d(removing):
-                if _t in _model.keys():
-                    _model.pop(_t)
-                else:
-                    if warnings:
-                        warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
+            _model = self._model_removing_(_model, removing, warnings)
         
         if verbose:
             print(self._get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         self._model = SedModel(_model)
+    
+    @staticmethod
+    def _model_changes_(model, changes, warnings=True):
+        """
+        Apply changes on model parameters.
+        Return the modified model dictionary and the list of priors in 'changes' (useful for description).
+        
+        Parameters
+        ----------
+        model : [dict]
+            Model dictionary on which to apply modifications.
+        
+        changes : [dict]
+            Dictionary containing the desired changes for the desired parameters.
+            As an example, changes={"zred"={"init"=2.}}) will change the initial value of the 'zred' parameter, without changing anything else.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        dict, list
+        """
+        _model, _changes = model.copy(), changes.copy()
+        _describe_priors = []
+        for _p, _pv in _changes.items():
+            if _p not in _model.keys():
+                if warnings:
+                    warn(f"'{_p}' is not included in model parameters. Adding it...")
+                #_changes.pop(_p)
+                _model[_p] = _pv
+            for _k, _kv in _pv.items():
+                if _k not in _model[_p].keys():
+                    if warnings:
+                        warn(f"'{_k}' is not included in '{_p}' model parameters. Adding it...")
+                    #_pv.pop(_k)
+                    _model[_p][_k] = _kv
+                if _k == "prior" and type(_kv) == dict:
+                    _describe_priors.append(_kv)
+                    _pv[_k] = self.build_prior(_kv)
+            _model[_p].update(_pv)
+        return _model, _describe_priors
+    
+    @staticmethod
+    def _model_removing_(model, removing, warnings):
+        """
+        Apply removings on model parameters.
+        Return the modified model dictionary.
+        
+        Parameters
+        ----------
+        model : [dict]
+            Model dictionary on which to apply modifications.
+        
+        removing : [dict]
+            Fill this input with every parameters you want to remove from the model.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        dict
+        """
+        _model = model.copy()
+        for _t in np.atleast_1d(removing):
+            if _t in _model.keys():
+                _model.pop(_t)
+            else:
+                if warnings:
+                    warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
+        return _model
     
     @staticmethod
     def build_prior(priors, verbose=False):

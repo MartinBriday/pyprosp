@@ -132,9 +132,10 @@ class ProspectorSpectrum():
                     _h5_group = _h5f["spec_chain"].attrs
                     _spec_chain = np.array([pickle.loads(_h5_group[str(ii)]) for ii in np.arange(len(_h5_group)-1)])
                     _lbda = pickle.loads(_h5_group["lbda"]) if "lbda" in _h5_group else None
-                    self._spec_chain = self._build_spec_chain_dataframe_(_spec_chain, _lbda, warnings)
+                    _spec_chain = ProspectorSpectrum._build_spec_chain_dataframe_(_spec_chain, _lbda, warnings)
                     return _spec_chain
-        return pandas.read_csv(filename, **kwargs)
+        else:
+            return pandas.read_csv(filename, **kwargs)
     
     #------------------#
     #   Spectrometry   #
@@ -335,7 +336,7 @@ class ProspectorSpectrum():
         -------
         pandas.DataFrame
         """
-        _spec_chain = pandas.DataFrame(_spec_chain.T)
+        _spec_chain = pandas.DataFrame(spec_chain.T)
         if lbda is not None:
             _spec_chain.index = lbda
             _spec_chain.index.names = ["lbda"]
@@ -496,11 +497,11 @@ class ProspectorSpectrum():
         -------
         dict
         """
-        _filters = self._build_filters_(filters, self.obs)
-        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in _filters}
-        _lbda = np.array([_phot_chains[_f][0] for _f in _filters])
-        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in _filters]).T
-        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filters}
+        _filternames = self._get_filternames_(filters, self.obs)
+        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in _filternames}
+        _lbda = np.array([_phot_chains[_f][0] for _f in _filternames])
+        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in _filternames]).T
+        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filternames}
     
     def get_phot_obs(self, filters="mask", restframe=False, unit="mag"):
         """
@@ -538,8 +539,8 @@ class ProspectorSpectrum():
         -------
         dict
         """
-        _filternames = self._build_filters_(filters, self.obs)
-        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in _filternames]
+        _filternames = self._get_filternames_(filters, self.obs)
+        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filternames)]
         _filters = np.array(self.obs["filters"])[_filt_flag]
         _lbda = np.array([_f.wave_average for _f in _filters])
         _phot = np.array(self.obs["maggies"])[_filt_flag]
@@ -559,9 +560,9 @@ class ProspectorSpectrum():
         return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc, "filters":_filternames}
     
     @staticmethod
-    def _build_filters_(filters, obs):
+    def _get_filternames_(filters, obs):
         """
-        Build and return an array of compatible filters.
+        Build and return an array of compatible filter names.
         
         Parameters
         ----------
@@ -581,13 +582,13 @@ class ProspectorSpectrum():
         np.array
         """
         if filters is None:
-            _filters = tools.pysed_to_filters(obs["filternames"])
+            _filters = io.pysed_to_filters(obs["filternames"])
         elif filters == "mask":
-            _filters = tools.pysed_to_filters(obs["filternames"])[obs["phot_mask"]]
+            _filters = io.pysed_to_filters(obs["filternames"])[obs["phot_mask"]]
         else:
             _filters = np.atleast_1d(filters)
             try:
-                _filters = tools.pysed_to_filters([(_f if _f in obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in _filters])
+                _filters = io.pysed_to_filters([(_f if _f in obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in _filters])
             except KeyError:
                 raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
                                  "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
@@ -599,7 +600,7 @@ class ProspectorSpectrum():
     def show(self, ax=None, figsize=[7,3.5], ax_rect=[0.1,0.2,0.8,0.7], unit="Hz", restframe=False,
              lbda_lim=(None, None), spec_prop={}, spec_unc_prop={},
              filters=None, phot_prop={}, phot_unc_prop={}, show_obs={},
-             show_legend={}, savefile=None):
+             show_legend={}, set_logx=True, set_logy=True, show_filters={}, savefile=None):
         """
         Plot the spectrum.
         Return the figure and the axe: {"fig":pyplot.Figure, "ax":pyplot.Axes}.
@@ -669,7 +670,17 @@ class ProspectorSpectrum():
             Default is {}.
         
         show_legend : [dict or None]
-            If True, plot the legend.
+            pyplot.legend kwargs.
+            If bool(show_legend) == False, the legend is not plotted.
+            Default is {}.
+        
+        set_logx, set_logy : [bool]
+            If True, set the corresponding axis in log scale.
+            Default is True (for both).
+        
+        show_filters : [dict or None]
+            Filters' transmission pyplot.plot kwargs.
+            If bool(show_filters) == False, the filters' transmission are not plotted.
             Default is {}.
         
         savefile : [string or None]
@@ -735,6 +746,26 @@ class ProspectorSpectrum():
 
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
         ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
+        if set_logx:
+            ax.set_xscale("log")
+        if set_logy:
+            ax.set_yscale("log")
+        
+        if show_filters:
+            _filters = self._get_filternames_(filters, self.obs)
+            _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
+            _filters = np.array(self.obs["filters"])[_filt_flag]
+            _ymin, _ymax = ax.get_ylim()
+            ax.set_ylim(_ymin, _ymax)
+            for _f in _filters:
+                _w, _t = tools.fix_trans(_f.wavelength, _f.transmission)
+                _t = _t*(1./100. if _t.max() > 1. else 1.)
+                if set_logy:
+                    _t = 10**(0.25*(np.log10(_ymax/_ymin))) * _t * _ymin + _ymin
+                else:
+                    _t = 0.35 * (_ymax - _ymin) * _t + _ymin
+                ax.plot(_w, _t, **show_filters)
+                
         
         if show_legend:
             ax.legend(_handles, _labels, **show_legend)
@@ -813,6 +844,6 @@ class ProspectorSpectrum():
     @property
     def spec_chain(self):
         """ Array containing spectrum chain (unit is maggies: "mgy") """
-        if not hasattr(self, "_spec_chain"):
+        if not hasattr(self, "_spec_chain") or self._spec_chain is None:
             self.load_spectra()
         return self._spec_chain

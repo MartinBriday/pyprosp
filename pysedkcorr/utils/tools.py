@@ -239,7 +239,7 @@ def convert_unit(data, unit_in, unit_out, data_unc=None, wavelength=None):
     - float or array, float or array (if data_unc provided)
     """
     if unit_in == unit_out:
-        return data if not data_unc else (data, data_unc)
+        return data if data_unc is None else (data, data_unc)
     
     if unit_in == "mag":
         data, data_unc = mag_to_flux(data, magerr=data_unc, wavelength=wavelength, zp=None, inhz=False)
