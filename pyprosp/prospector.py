@@ -206,14 +206,14 @@ class Prospector():
         -------
         Void
         """
+        from prospect.utils.obsutils import fix_obs
         if obs is not None:
-            self._obs = obs
+            self._obs = fix_obs(obs)
             if set_data:
                 self._set_data_from_obs(obs=self.obs, warnings=warnings)
             return
         
         from sedpy.observate import load_filters
-        from prospect.utils.obsutils import fix_obs
         self._obs = {"filters":load_filters(io.filters_to_pysed(self.filters)) if self.has_phot_in else None,
                      "zspec":self.z,
                      "name":self.name}
