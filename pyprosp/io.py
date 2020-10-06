@@ -6,7 +6,7 @@ import sys
 import os
 import warnings
 
-from ..utils import tools
+from . import tools
 
 _DEFAULT_FILTER_CONFIG = {"sdss":{_f:"sdss_{}0".format(_f) for _f in ["u", "g", "r", "i", "z"]},
                           "galex":{"FUV":"galex_FUV", "NUV":"galex_NUV"},

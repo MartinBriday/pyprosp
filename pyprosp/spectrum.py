@@ -2,7 +2,7 @@
 import pandas
 import numpy as np
 
-from ..utils import tools
+from . import tools
 from . import io
 
 class ProspectorSpectrum():
