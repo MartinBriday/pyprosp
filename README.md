@@ -1,2 +1,3 @@
-# pykcorr
-K-correct photometric measurements after SED fitting shifted to z = 0.
+# pyprosp
+User ready SED fitting code using prospector package.
+Allow basic k-corrections.
