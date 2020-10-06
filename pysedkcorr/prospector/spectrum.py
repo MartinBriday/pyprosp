@@ -503,7 +503,7 @@ class ProspectorSpectrum():
         _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in _filternames]).T
         return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filternames}
     
-    def get_phot_obs(self, filters="mask", restframe=False, unit="mag"):
+    def get_phot_obs(self, filters=None, unit="mag"):
         """
         Build and return a dictionary containing photometry data used for SED fitting.
         The dictionary contains:
@@ -519,11 +519,8 @@ class ProspectorSpectrum():
             Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
             If None, extract photometry for the whole list of filters availble in 'obs' attribute.
             If "mask", extract photometry for the filters used in the SED fitting.
+            If "~mask", extract photometry for the filters not used in the SED fitting.
             Default is None.
-        
-        restframe : [bool]
-            If True, the spectrum is first deredshifted before doing the synthetic photometry.
-            Default is False.
         
         unit : [string]
             Unit of the returned photometry. Available units are:
@@ -539,12 +536,11 @@ class ProspectorSpectrum():
         -------
         dict
         """
-        _filternames = self._get_filternames_(filters, self.obs)
-        _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filternames)]
-        _filters = np.array(self.obs["filters"])[_filt_flag]
+        _filternames, _filt_idx = self._get_filternames_(filters, self.obs, return_idx=True)
+        _filters = np.array(self.obs["filters"])[_filt_idx]
         _lbda = np.array([_f.wave_average for _f in _filters])
-        _phot = np.array(self.obs["maggies"])[_filt_flag]
-        _phot_unc = np.array(self.obs["maggies_unc"])[_filt_flag]
+        _phot = np.array(self.obs["maggies"])[_filt_idx]
+        _phot_unc = np.array(self.obs["maggies_unc"])[_filt_idx]
         _unit_in = "mgy"
         
         # Deredshift
@@ -560,21 +556,28 @@ class ProspectorSpectrum():
         return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc, "filters":_filternames}
     
     @staticmethod
-    def _get_filternames_(filters, obs):
+    def _get_filternames_(filters, obs, return_idx=False):
         """
         Build and return an array of compatible filter names.
         
         Parameters
         ----------
         filters : [string or list(string) or None]
-            List of filters from which to get the photometry.
+            List of filters from which to get a convenient format of filter names.
             Must be on the format instrument.band (e.g. sdss.u, ps1.g, ...).
-            If None, extract photometry for the whole list of filters availble in 'obs'.
-            If "mask", extract photometry for the filters used in the SED fitting.
+            If None, return the whole list of filters availble in 'obs'.
+            If "mask", return the filters used in the SED fitting.
+            If "~mask", return the filters not used in the SED fitting.
             Default is None.
         
         obs : [dict]
             Prospector compatible 'obs' dictionary.
+        
+        Options
+        -------
+        return_idx : [bool]
+            If True, return in addition an array containing the indexes of the given filters in 'self.obs["filternames"]'.
+            Default is False.
         
         
         Returns
@@ -585,6 +588,8 @@ class ProspectorSpectrum():
             _filters = io.pysed_to_filters(obs["filternames"])
         elif filters == "mask":
             _filters = io.pysed_to_filters(obs["filternames"])[obs["phot_mask"]]
+        elif filters == "~mask":
+            _filters = io.pysed_to_filters(obs["filternames"])[~obs["phot_mask"]]
         else:
             _filters = np.atleast_1d(filters)
             try:
@@ -592,6 +597,9 @@ class ProspectorSpectrum():
             except KeyError:
                 raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
                                  "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
+        if return_idx:
+            _filt_idx = [np.where(np.array(obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
+            return _filters, _filt_idx
         return _filters
     
     #--------------#
@@ -740,10 +748,16 @@ class ProspectorSpectrum():
             _labels.append("\n".join(_l_phot))
         
         if show_obs:
-            _phot_obs = self.get_phot_obs(filters=filters, restframe=restframe, unit=unit)
+            _phot_obs = self.get_phot_obs(filters="mask", unit=unit)
             _handles.append(ax.errorbar(_phot_obs["lbda"], _phot_obs["phot"], yerr=_phot_obs["phot_unc"], **show_obs))
             _labels.append("Observed photometry")
-
+            _phot_obs_mask = self.get_phot_obs(filters="~mask", unit=unit)
+            _show_obs_mask = show_obs.copy()
+            _show_obs_mask["alpha"] = _show_obs_mask["alpha"] * 0.3 if "alpha" in _show_obs_mask else 0.3
+            _handles.append(ax.errorbar(_phot_obs_mask["lbda"], _phot_obs_mask["phot"],
+                                        yerr=_phot_obs_mask["phot_unc"], **_show_obs_mask))
+            _labels.append("Observed photometry\n(not used for SED fitting)")
+            
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
         ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
         if set_logx:
@@ -752,9 +766,8 @@ class ProspectorSpectrum():
             ax.set_yscale("log")
         
         if show_filters:
-            _filters = self._get_filternames_(filters, self.obs)
-            _filt_flag = [np.where(np.array(self.obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
-            _filters = np.array(self.obs["filters"])[_filt_flag]
+            _filternames, _filt_idx = self._get_filternames_(filters, self.obs, return_idx=True)
+            _filters = np.array(self.obs["filters"])[_filt_idx]
             _ymin, _ymax = ax.get_ylim()
             ax.set_ylim(_ymin, _ymax)
             for _f in _filters:
@@ -765,7 +778,6 @@ class ProspectorSpectrum():
                 else:
                     _t = 0.35 * (_ymax - _ymin) * _t + _ymin
                 ax.plot(_w, _t, **show_filters)
-                
         
         if show_legend:
             ax.legend(_handles, _labels, **show_legend)

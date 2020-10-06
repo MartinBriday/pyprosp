@@ -63,9 +63,10 @@ def pysed_to_filters(filters):
     -------
     list(string)
     """
-    return np.array([_inst+"."+_band for _inst, _instv in _DEFAULT_FILTER_CONFIG.items()
+    return np.array([_inst+"."+_band for _filt in filters
+                                     for _inst, _instv in _DEFAULT_FILTER_CONFIG.items()
                                      for _band, _bandv in _instv.items()
-                                     for _filt in filters if _filt==_bandv ])
+                                     if _filt==_bandv ])
 
 def load_phot(phot, unit):
     """

@@ -308,7 +308,7 @@ class Prospector():
         
         self._model = SedModel(_model)
     
-    def modify_model(self, changes=None, removing=None, verbose=False, warnings=True, describe=False):
+    def modify_model(self, changes=None, removings=None, verbose=False, warnings=True, describe=False):
         """
         Apply changes on the loaded model.
         
@@ -319,8 +319,8 @@ class Prospector():
             As an example, changes={"zred"={"init"=2.}}) will change the initial value of the 'zred' parameter, without changing anything else.
             Default is None.
         
-        removing : [string or list(string) or None]
-            Fill this input with every parameters you want to remove from the model.
+        removings : [string or list(string) or None]
+            List of every parameters you want to remove from the model.
             Default is None.
         
         Options
@@ -357,8 +357,8 @@ class Prospector():
             self.describe_priors(_describe_priors)
         
         #Removing
-        if removing is not None:
-            _model = self._model_removing_(_model, removing, warnings)
+        if removings is not None:
+            _model = self._model_removings_(_model, removings, warnings)
         
         if verbose:
             print(self._get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
@@ -413,7 +413,7 @@ class Prospector():
         return _model, _describe_priors
     
     @staticmethod
-    def _model_removing_(model, removing, warnings):
+    def _model_removings_(model, removings, warnings):
         """
         Apply removings on model parameters.
         Return the modified model dictionary.
@@ -423,8 +423,8 @@ class Prospector():
         model : [dict]
             Model dictionary on which to apply modifications.
         
-        removing : [dict]
-            Fill this input with every parameters you want to remove from the model.
+        removings : [list]
+            List of every parameters you want to remove from the model.
         
         Options
         -------
@@ -438,7 +438,7 @@ class Prospector():
         dict
         """
         _model = model.copy()
-        for _t in np.atleast_1d(removing):
+        for _t in np.atleast_1d(removings):
             if _t in _model.keys():
                 _model.pop(_t)
             else:
