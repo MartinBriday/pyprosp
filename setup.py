@@ -11,7 +11,7 @@ MAINTAINER_EMAIL = 'briday@ipnl.in2p3.fr'
 URL = 'https://github.com/MartinBriday/pykcorr'
 LICENSE = 'Apache 2.0'
 DOWNLOAD_URL = 'https://github.com/MartinBriday/pykcorr'
-VERSION = '0.1.0'
+VERSION = '0.2.1'
 
 try:
     from setuptools import setup, find_packages

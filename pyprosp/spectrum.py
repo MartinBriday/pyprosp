@@ -91,7 +91,7 @@ class ProspectorSpectrum():
         -------
         ProspectorSpectrum
         """
-        from .prospector import Prospector
+        from .pyprosp import Prospector
         import h5py
         _prosp = Prospector.from_h5(filename=filename, warnings=warnings)
         _this = cls(chains=_prosp.chains, model=_prosp.model, obs=_prosp.obs, sps=_prosp.sps)
