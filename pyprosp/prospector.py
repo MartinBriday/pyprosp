@@ -165,6 +165,8 @@ class Prospector():
         if self.spec_in["lbda"] is None and self.spec_in["spec"] is None and self.spec_in["spec.err"]:
             self._spec_in = None
     
+    #=================#
+    #   Build 'obs'   #
     def build_obs(self, obs=None, phot_mask=None, spec_mask=None, verbose=False, warnings=True, set_data=False):
         """
         Build a dictionary containing observations in a prospector compatible format.
@@ -245,7 +247,9 @@ class Prospector():
         if verbose:
             print(self._get_box_title(title="Built obs", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(self.obs)
-        
+    
+    #===================#
+    #   Build 'model'   #
     def build_model(self, model=None, templates=None, verbose=False, describe=False):
         """
         Build the model parameters to fit on measurements.
@@ -259,7 +263,7 @@ class Prospector():
         
         Options
         -------
-        model :  [prospect.models.sedmodel.SedModel or dict or None]
+        model :  [prospect.models.sedmodel.SedModel or dict or list or None]
             Can load an already existing prospector compatible 'model' SedModel.
             Can update a SedModel compatible 'model' dictionary before to create the SedModel on it.
             Default is None.
@@ -288,6 +292,8 @@ class Prospector():
             self.describe_templates(templates=templates)
         
         _model = {} if model is None else model
+        if isinstance(_model, list):
+            _model = {_p["name"]:_p for _p in _model}
         for _t in np.atleast_1d(templates):
             if _t in TemplateLibrary._descriptions.keys():
                 _model.update(TemplateLibrary[_t])
@@ -474,6 +480,8 @@ class Prospector():
         _name = _priors.pop("name")
         return eval("p_priors.{}".format(_name))(**_priors)
     
+    #=================#
+    #   Build 'sps'   #
     def build_sps(self, sps=None, zcontinuous=1):
         """
         Create the appropriate sps.
@@ -513,6 +521,8 @@ class Prospector():
             from prospect.sources import FastStepBasis
             self._sps = FastStepBasis(zcontinuous=zcontinuous)
     
+    #=================#
+    #   SED fitting   #
     def run_fit(self, which="dynesty", run_params={}, savefile=None, set_chains=True, verbose=False):
         """
         Run the SED fitting.
@@ -922,7 +932,7 @@ class Prospector():
         _prior_list.remove("Prior")
         print("Available priors: {}.\n".format(", ".join(_prior_list)))
         if priors is not None:
-            print("(Required parameters must contained in addition with a 'name' parameter in a dictionary to correctly build the prior, \n"+
+            print("(Required arguments must be included in addition with the 'name' argument in a dictionary to correctly build the prior, \n"+
                   " for example, try to describe 'priors={'name':'Normal', 'mean':0., 'sigma':1.}').\n")
             if priors in ["*", "all"]:
                 priors = _prior_list
