@@ -414,7 +414,7 @@ class Prospector():
                     _model[_p][_k] = _kv
                 if _k == "prior" and type(_kv) == dict:
                     _describe_priors.append(_kv)
-                    _pv[_k] = self.build_prior(_kv)
+                    _pv[_k] = Prospector.build_prior(_kv)
             _model[_p].update(_pv)
         return _model, _describe_priors
     
@@ -1020,6 +1020,9 @@ class Prospector():
             _doc = [_d for _d in _doc if _d.split(":")[0] not in _rejected_params and len(_d.split(":")[0].split(" "))==1]
             _doc[-1] = _doc[-1].split("Returns")[0]
             print("".join(["    "]+_doc))
+            if _f == "dynesty":
+                print("    There are more informations on these parameters at:\n"+
+                      "        https://dynesty.readthedocs.io/en/latest/api.html#dynesty.dynesty.DynamicNestedSampler\n")
     
     @staticmethod
     def _get_box_title(title, box="\n#=#\n#   {}   #\n#=#\n"):
