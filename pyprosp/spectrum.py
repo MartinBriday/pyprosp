@@ -605,10 +605,13 @@ class ProspectorSpectrum():
     #--------------#
     #   Plotting   #
     #--------------#
-    def show(self, ax=None, figsize=[7,3.5], ax_rect=[0.1,0.2,0.8,0.7], unit="Hz", restframe=False,
-             lbda_lim=(None, None), spec_prop={}, spec_unc_prop={},
-             filters=None, phot_prop={}, phot_unc_prop={}, show_obs={},
-             show_legend={}, set_logx=True, set_logy=True, show_filters={}, savefile=None):
+    def show(self, ax=None, figsize=(10,6), ax_rect=[0.1, 0.2, 0.8, 0.7], unit="Hz", restframe=False,
+             lbda_lim=(1e3, 1e5), spec_prop={"c":"k", "lw":0.5, "zorder":4}, spec_unc_prop={"color":"0.7", "alpha":0.35, "lw":0, "zorder":2},
+             filters=None, phot_prop={"marker":"o", "s":60, "fc":"xkcd:azure", "ec":"b", "zorder":6},
+             phot_unc_prop={"marker":"", "ls":"None", "ecolor":"C0", "zorder":5},
+             show_obs={"marker":"s", "ms":7, "ls":"None", "mfc":"r", "mec":"b", "ecolor":"0.7", "zorder":4},
+             show_legend={"loc":"best", "frameon":False, "labelspacing":0.8}, set_logx=True, set_logy=True,
+             show_filters={"lw":1.5, "color":"gray", "alpha":0.7, "zorder":1}, savefile=None):
         """
         Plot the spectrum.
         Return the figure and the axe: {"fig":pyplot.Figure, "ax":pyplot.Axes}.
@@ -752,11 +755,12 @@ class ProspectorSpectrum():
             _handles.append(ax.errorbar(_phot_obs["lbda"], _phot_obs["phot"], yerr=_phot_obs["phot_unc"], **show_obs))
             _labels.append("Observed photometry")
             _phot_obs_mask = self.get_phot_obs(filters="~mask", unit=unit)
-            _show_obs_mask = show_obs.copy()
-            _show_obs_mask["alpha"] = _show_obs_mask["alpha"] * 0.3 if "alpha" in _show_obs_mask else 0.3
-            _handles.append(ax.errorbar(_phot_obs_mask["lbda"], _phot_obs_mask["phot"],
-                                        yerr=_phot_obs_mask["phot_unc"], **_show_obs_mask))
-            _labels.append("Observed photometry\n(not used for SED fitting)")
+            if len(_phot_obs_mask["lbda"]) > 0:
+                _show_obs_mask = show_obs.copy()
+                _show_obs_mask["alpha"] = _show_obs_mask["alpha"] * 0.3 if "alpha" in _show_obs_mask else 0.3
+                _handles.append(ax.errorbar(_phot_obs_mask["lbda"], _phot_obs_mask["phot"],
+                                            yerr=_phot_obs_mask["phot_unc"], **_show_obs_mask))
+                _labels.append("Observed photometry\n(not used for SED fitting)")
             
         ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
         ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")

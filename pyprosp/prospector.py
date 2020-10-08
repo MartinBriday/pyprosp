@@ -571,7 +571,7 @@ class Prospector():
         self.run_params.update(run_params)
         
         #Fit
-        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, **self.run_params)
+        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, verbose=verbose, **self.run_params)
         
         if savefile is not None:
             self.write_h5(savefile=savefile)
