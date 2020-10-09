@@ -387,3 +387,24 @@ def synthesize_photometry(lbda, flux, filter_lbda, filter_trans, normed=True):
     normband = 1. if not normed else integrate_photons(lbda, np.ones(len(lbda)),None,filter_lbda,filter_trans)
       
     return integrate_photons(lbda,flux,None,filter_lbda,filter_trans)/normband
+
+def sfh_delay_tau_to_sfr(tage, tau, mass):
+    """
+    Conversion from SFH to SFR based on a delay-tau model.
+    The returned SFR is in Msun/year.
+    
+    Parameters
+    ----------
+    tage : [float]
+    
+    tau : [float]
+    
+    mass : [float]
+    
+    
+    Returns
+    -------
+    float
+    """
+    from scipy.special import gamma, gammainc
+    return mass * (tage/tau**2) * np.exp(-tage/tau) / (gamma(2) * gammainc(2, tage/tau)) * 1e-9
