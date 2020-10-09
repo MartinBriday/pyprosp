@@ -8,10 +8,29 @@ import warnings
 
 from . import tools
 
-_DEFAULT_FILTER_CONFIG = {"sdss":{_f:"sdss_{}0".format(_f) for _f in ["u", "g", "r", "i", "z"]},
+_DEFAULT_FILTER_CONFIG = {"sdss":{_f:f"sdss_{_f}0" for _f in ["u", "g", "r", "i", "z"]},
                           "galex":{"FUV":"galex_FUV", "NUV":"galex_NUV"},
-                          "ps1":{_f:"ps1_{}".format(_f) for _f in ["g", "r", "i", "z", "y"]},
-                          "spitzer":{_f:"spitzer_irac_ch{}".format(_f) for _f in ["1", "2", "3", "4"]}, 
+                          "ps1":{_f:f"ps1_{_f}" for _f in ["g", "r", "i", "z", "y"]},
+                          "spitzer":{_f:f"spitzer_irac_ch{_f}" for _f in ["1", "2", "3", "4"]},
+                          "spitzer":{_f0:f"spitzer_{_f1}" for _f0, _f1 in zip(["irac_1", "irac_2", "irac_3", "irac_4",
+                                                                               "irs_blue", "mips_24", "mips_70", "mips_160"],
+                                                                              ["irac_ch1", "irac_ch2", "irac_ch3", "irac_ch4",
+                                                                               "irs_16", "mips_24", "mips_70", "mips_160"])},
+                          "bessell":{_f:f"bessell_{_f}" for _f in ["B", "I", "R", "U", "V"]},
+                          "decam":{_f:f"decam_{_f}" for _f in ["u", "g", "r", "i", "z", "Y"]},
+                          "gaia":{"gbp":"gaia_bp", "g":"gaia_g", "grp":"gaia_rp"},
+                          "herschel":{_f0:f"herschel_{_f1}" for _f0, _f1 in zip(["pacs_blue", "pacs_green", "pacs_red",
+                                                                                 "spire_psw", "spire_pmw", "spire_plw",
+                                                                                 "spire_psw_ext", "spire_pmw_ext", "spire_plw_ext"],
+                                                                                ["pacs_70", "pacs_100", "pacs_160",
+                                                                                 "spire_250", "spire_350", "spire_500",
+                                                                                 "spire_ext_250", "spire_ext_350", "spire_ext_500"])},
+                          "hipparcos":{_f:f"hipparcos_{_f}" for _f in ["B", "H", "V"]},
+                          "hsc":{_f:f"hsc_{_f}" for _f in ["g", "r", "i", "z", "y"]},
+                          "sofia":{f"hawc_{_f}":f"sofia_hawc_band{_f}" for _f in ["A", "B", "C", "D", "E"]},
+                          "stromgren":{_f:f"stromgren_{_f}" for _f in ["b", "u", "v", "y"]},
+                          "2mass":{_f:f"twomass_{_f}" for _f in ["H", "J", "Ks"]},
+                          "wise":{_f:f"wise_{_f}" for _f in ["w1", "w2", "w3", "w4"]},
                           }
                           
 def keys_to_filters(keys):

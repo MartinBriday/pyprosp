@@ -254,7 +254,7 @@ class ProspectorSpectrum():
         _spec, _, _ = self.model.sed(theta, obs=self.obs, sps=self.sps)
         return tools.convert_unit(_spec, "mgy", unit, wavelength=self.wavelengths)
     
-    def get_spectral_data(self, restframe=False, unit="Hz", lbda_lim=(None, None)):
+    def get_spectral_data(self, restframe=False, exp=3, unit="Hz", lbda_lim=(None, None)):
         """
         Return a dictionary of the treated spectral data.
         The dictionary contains:
@@ -268,6 +268,11 @@ class ProspectorSpectrum():
         restframe : [bool]
             If True, the returned spectrum is restframed.
             Default is False.
+        
+        exp : [float]
+            // Ignored if 'restframe = False' //
+            Exposant for the redshift flux dilution (exp=3 is for erg/s/cm2/AA spectra).
+            Default is 3.
         
         unit : [string]
             Unit of the returned spectrum. Available units are:
@@ -295,7 +300,7 @@ class ProspectorSpectrum():
         # Deredshift
         if restframe:
             _spec_chain = tools.convert_flux_unit(_spec_chain, _unit_in, "AA", wavelength=_lbda)
-            _lbda, _spec_chain = tools.deredshift(lbda=_lbda, flux=_spec_chain, z=self.z, variance=None, exp=3)
+            _lbda, _spec_chain = tools.deredshift(lbda=_lbda, flux=_spec_chain, z=self.z, variance=None, exp=exp)
             _unit_in = "AA"
         
         # Change unit
@@ -376,7 +381,7 @@ class ProspectorSpectrum():
     #----------------#
     #   Photometry   #
     #----------------#
-    def get_synthetic_photometry(self, filter, restframe=False, unit="Hz"):
+    def get_synthetic_photometry(self, filter, restframe=False, exp=3, unit="Hz"):
         """
         Return photometry synthesized through the given filter/bandpass.
         The returned data are (effective wavelength, synthesize flux/mag) in an array with same size as for 'self.spec_chain'.
@@ -395,6 +400,11 @@ class ProspectorSpectrum():
         restframe : [bool]
             If True, the spectrum is first deredshifted before doing the synthetic photometry.
             Default is False.
+        
+        exp : [float]
+            // Ignored if 'restframe = False' //
+            Exposant for the redshift flux dilution (exp=3 is for erg/s/cm2/AA spectra).
+            Default is 3.
 
         unit : [string]
             Unit of the returned photometry. Available units are:
@@ -432,12 +442,12 @@ class ProspectorSpectrum():
                             f"Your input : {filter}")
 
         # - Synthesize through bandpass
-        _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe)
+        _sflux_aa = self.synthesize_photometry(_bp.wave, _bp.trans, restframe=restframe, exp=exp)
         _slbda = _bp.wave_eff/(1+self.z) if restframe else _bp.wave_eff
         
         return _slbda, tools.convert_unit(_sflux_aa, "AA", unit, wavelength=_slbda)
     
-    def synthesize_photometry(self, filter_lbda, filter_trans, restframe=False):
+    def synthesize_photometry(self, filter_lbda, filter_trans, restframe=False, exp=3):
         """
         Return the synthetic flux in erg/s/cm2/AA.
         
@@ -452,23 +462,22 @@ class ProspectorSpectrum():
             If True, the spectrum is first deredshifted before doing the synthetic photometry.
             Default is False.
         
+        exp : [float]
+            // Ignored if 'restframe = False' //
+            Exposant for the redshift flux dilution (exp=3 is for erg/s/cm2/AA spectra).
+            Default is 3.
+        
         
         Returns
         -------
         float
         """
-        _spec_data = self.get_spectral_data(restframe=restframe, unit="AA", lbda_lim=(None, None))
+        _spec_data = self.get_spectral_data(restframe=restframe, exp=exp, unit="AA", lbda_lim=(None, None))
         return tools.synthesize_photometry(_spec_data["lbda"], _spec_data["spec_chain"], filter_lbda, filter_trans, normed=True)
     
-    def get_phot_data(self, filters=None, restframe=False, unit="mag"):
+    def get_phot_data(self, filters=None, restframe=False, exp=3, unit="mag", plot_format=True):
         """
         Build and return a dictionary containing photometry data extracted from the fitted spectrum.
-        The dictionary contains:
-            - "lbda": the wavelength array of the filters
-            - "phot_chains": the extracted photometry chains
-            - "phot": the extracted photometry chain medians.
-            - "phot_low", "phot_up": 16% and 84% resp. of the extracted photometry chains
-            - "filters": the filters names
         
         Parameters
         ----------
@@ -483,6 +492,11 @@ class ProspectorSpectrum():
             If True, the spectrum is first deredshifted before doing the synthetic photometry.
             Default is False.
         
+        exp : [float]
+            // Ignored if 'restframe = False' //
+            Exposant for the redshift flux dilution (exp=3 is for erg/s/cm2/AA spectra).
+            Default is 3.
+        
         unit : [string]
             Unit of the returned photometry. Available units are:
                 - "Hz": erg/s/cm2/Hz
@@ -492,16 +506,42 @@ class ProspectorSpectrum():
                 - "mag": magnitude
             Default is "Hz".
         
+        Options
+        -------
+        plot_format : [bool]
+            Returning dictionary format choice.
+            If True, return a convient format for plots:
+                - "lbda": the wavelength array of the filters
+                - "phot_chains": the extracted photometry chains
+                - "phot": the extracted photometry chain medians
+                - "phot_low", "phot_up": 16% and 84% resp. of the extracted photometry chains
+                - "filters": the filters names
+            If False, the returned dictionary is user friendly:
+                (for each _filter in "filters")
+                - _filter: {"lbda": the wavelength array of the _filter
+                            "phot_chain": the extracted photometry chains
+                            "phot": the extracted photometry (median, -sigma, +sigma)}
+        
         
         Returns
         -------
         dict
         """
         _filternames = self._get_filternames_(filters, self.obs)
-        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit) for _f in _filternames}
+        _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit, exp=exp) for _f in _filternames}
         _lbda = np.array([_phot_chains[_f][0] for _f in _filternames])
-        _phot_low, _phot, _phot_up = np.array([np.percentile(_phot_chains[_f][1], [16, 50, 84]) for _f in _filternames]).T
-        return {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filternames}
+        _phot_chains = np.array([_phot_chains[_f][1] for _f in _filternames])
+        _phot_low, _phot, _phot_up = np.array([np.percentile(_pc, [16, 50, 84]) for _pc in _phot_chains]).T
+        dict_out = {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filternames}
+        if plot_format:
+            return dict_out
+        else:
+            return {_f:{"lbda":dict_out["lbda"][ii],
+                        "phot_chain":dict_out["phot_chains"][ii],
+                        "phot":(dict_out["phot"][ii],
+                                dict_out["phot"][ii]-dict_out["phot_low"][ii],
+                                dict_out["phot_up"][ii]-dict_out["phot"][ii])}
+                    for ii, _f in enumerate(dict_out["filters"])}
     
     def get_phot_obs(self, filters=None, unit="mag"):
         """
@@ -542,12 +582,6 @@ class ProspectorSpectrum():
         _phot = np.array(self.obs["maggies"])[_filt_idx]
         _phot_unc = np.array(self.obs["maggies_unc"])[_filt_idx]
         _unit_in = "mgy"
-        
-        # Deredshift
-        #if restframe:
-        #    _phot, _phot_unc = tools.convert_flux_unit([_phot, _phot_unc], _unit_in, "AA", wavelength=_lbda)
-        #    _lbda, _phot, _phot_unc = tools.deredshift(lbda=_lbda, flux=_phot, z=self.z, variance=_phot_unc**2, exp=3)
-        #    _unit_in = "AA"
         
         # Change unit
         _phot, _phot_unc = tools.convert_unit(data=_phot, data_unc=_phot_unc, unit_in=_unit_in,
@@ -774,13 +808,16 @@ class ProspectorSpectrum():
             _filters = np.array(self.obs["filters"])[_filt_idx]
             _ymin, _ymax = ax.get_ylim()
             ax.set_ylim(_ymin, _ymax)
-            for _f in _filters:
+            for ii, _f in enumerate(_filters):
                 _w, _t = tools.fix_trans(_f.wavelength, _f.transmission)
                 _t = _t*(1./100. if _t.max() > 1. else 1.)
                 if set_logy:
                     _t = 10**(0.25*(np.log10(_ymax/_ymin))) * _t * _ymin + _ymin
+                    _y_f = 10**(0.25*(np.log10(_ymax/_ymin))) * 0.03 * _ymin + _ymin
                 else:
                     _t = 0.35 * (_ymax - _ymin) * _t + _ymin
+                    _y_f = 0.35 * (_ymax - _ymin) * 0.03 + _ymin
+                ax.text(_f.wave_average, _y_f, _filternames[ii], ha="center", va="bottom", rotation="vertical", fontsize="small")
                 ax.plot(_w, _t, **show_filters)
         
         if show_legend:
