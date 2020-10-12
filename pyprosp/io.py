@@ -164,11 +164,11 @@ def load_spec(spec, unit):
     if unit == "mag":
         _spec, _dspec = tools.mag_to_flux(_spec, _dspec, _lbda, inhz=True)
         unit = "Hz"
-    _spec = tools.convert_flux_unit(_spec, unit, "mgy")
+    _spec = tools.convert_flux_unit(flux=_spec, unit_in=unit, unit_out="mgy", wavelength=_lbda)
     _out = {"lbda":_lbda, "spec":_spec}
     
     if _dspec is not None:
-        _out["spec.err"] = tools.convert_flux_unit(_dspec, unit, "mgy")
+        _out["spec.err"] = tools.convert_flux_unit(flux=_dspec, unit_in=unit, unit_out="mgy", wavelength=_lbda)
     
     return _out
     

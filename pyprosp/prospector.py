@@ -151,7 +151,7 @@ class Prospector():
             self._phot_in = None
             if warnings:
                 warn("Cannot set 'phot_in' attribute either because there is no 'maggies' or no 'maggies_unc' in the 'obs' dictionary.")
-        except(AttributeError):
+        except(TypeError):
             self._phot_in = None
             if warnings:
                 warn("Cannot set 'phot_in' attribute because there is no 'filters' attribute.")
@@ -216,7 +216,7 @@ class Prospector():
             return
         
         from sedpy.observate import load_filters
-        self._obs = {"filters":load_filters(io.filters_to_pysed(self.filters)) if self.has_phot_in else None,
+        self._obs = {"filters":load_filters(io.filters_to_pysed(self.filters)) if self.has_phot_in() else None,
                      "zspec":self.z,
                      "name":self.name}
         ### Photometry ###
@@ -307,6 +307,8 @@ class Prospector():
         
         if self.has_z():
             _model["zred"].update({"init":self.obs["zspec"], "isfree":False})
+        else:
+            _model["zred"].update({"isfree":True})
         
         if verbose:
             print(self._get_box_title(title="Built model", box="\n#=#\n#   {}   #\n#=#\n"))
@@ -1101,6 +1103,10 @@ class Prospector():
         if not hasattr(self,"_filters"):
             self._filters = None
         return self._filters
+    
+    def has_filters(self):
+        """ Test that filters is not void """
+        return self.filters is not None
     
     ### prospector ###
     @property
