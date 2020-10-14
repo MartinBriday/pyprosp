@@ -30,6 +30,20 @@ class ProspectorSpectrum():
         sps : [SPS object]
             Prospector SPS object.
         
+        Options
+        -------
+        filename : [string or None]
+            File name/directory from which to extract the spectrum chain.
+            If a .h5 file is given, data must be saved as attributes in the group named "spec_chain".
+            Else, the code try to execute pandas.read_csv(filename, **kwargs).
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        **kwargs
+            pandas.DataFrame.read_csv kwargs.
+        
         
         Returns
         -------
@@ -38,7 +52,7 @@ class ProspectorSpectrum():
         if kwargs != {}:
             self.set_data(**kwargs)
     
-    def set_data(self, chains, model, obs, sps):
+    def set_data(self, chains, model, obs, sps, filename=None, warnings=True, **kwargs):
         """
         Set up input data as attributes.
         
@@ -57,6 +71,20 @@ class ProspectorSpectrum():
         sps : [SPS object]
             Prospector SPS object.
         
+        Options
+        -------
+        filename : [string or None]
+            File name/directory from which to extract the spectrum chain.
+            If a .h5 file is given, data must be saved as attributes in the group named "spec_chain".
+            Else, the code try to execute pandas.read_csv(filename, **kwargs).
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        **kwargs
+            pandas.DataFrame.read_csv kwargs.
+        
         
         Returns
         -------
@@ -67,6 +95,8 @@ class ProspectorSpectrum():
         self._obs = obs
         self._sps = sps
         self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
+        if file_spec_chain:
+            self._spec_chain = self.read_file(filename=filename, warnings=warnings, **kwargs)
     
     @classmethod
     def from_h5(cls, filename, warnings=True):
@@ -86,17 +116,18 @@ class ProspectorSpectrum():
             If True, allow warnings to be printed.
             Default is True.
         
+        **kwargs
+            pandas.DataFrame.read_csv kwargs.
+        
         
         Returns
         -------
         ProspectorSpectrum
         """
         from .prospector import Prospector
-        import h5py
-        _prosp = Prospector.from_h5(filename=filename, warnings=warnings)
-        _this = cls(chains=_prosp.chains, model=_prosp.model, obs=_prosp.obs, sps=_prosp.sps)
-        with h5py.File(filename, "r") as _h5f:
-            _this._spec_chain = _this.read_file(filename=filename, warnings=warnings)
+        _prosp = Prospector.from_h5(filename=filename, build_sps=True, warnings=warnings)
+        _this = cls(chains=_prosp.chains, model=_prosp.model, obs=_prosp.obs, sps=_prosp.sps,
+                    filename=filename, warnings=warnings, **kwargs)
         return _this
     
     @staticmethod
@@ -118,14 +149,14 @@ class ProspectorSpectrum():
             Default is True.
         
         **kwargs
-            pandas.DataFrame.to_csv kwargs.
+            pandas.DataFrame.read_csv kwargs.
             
         Returns
         -------
         pandas.DataFrame
         """
-        import h5py
         if filename.endswith(".h5"):
+            import h5py
             with h5py.File(filename, "r") as _h5f:
                 if "spec_chain" in _h5f:
                     import pickle
@@ -134,8 +165,17 @@ class ProspectorSpectrum():
                     _lbda = pickle.loads(_h5_group["lbda"]) if "lbda" in _h5_group else None
                     _spec_chain = ProspectorSpectrum._build_spec_chain_dataframe_(_spec_chain, _lbda, warnings)
                     return _spec_chain
+                else:
+                    if warnings:
+                        warn("""There is no group named "spec_chain" in the .h5 file you gave.""")
         else:
-            return pandas.read_csv(filename, **kwargs)
+            try:
+                return pandas.read_csv(filename, **kwargs)
+            except Exception:
+                if warnings:
+                    warn(f"There is an error trying to run 'pandas.read_csv(filename, **kwargs)' with your inputs: {Exception}.")
+        if warnings:
+            warn("The spectrum chain is NOT loaded!")
     
     #------------------#
     #   Spectrometry   #
@@ -178,7 +218,7 @@ class ProspectorSpectrum():
         Void
         """
         if from_file:
-            self._spec_chain = self.read_file(from_file, warnings=warnings, **kwargs)
+            self._spec_chain = self.read_file(filename=from_file, warnings=warnings, **kwargs)
             return
         
         if size is not None and isinstance(size, int):

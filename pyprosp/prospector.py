@@ -634,9 +634,23 @@ class Prospector():
         self._chains = np.array(_chains)
         self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
     
-    def _load_spectrum_(self):
+    def load_spectrum(self, filename=None, warnings=True, **kwargs):
         """
         Load a spectrum object and set it as attribute.
+        
+        Options
+        -------
+        filename : [string or None]
+            File name/directory from which to extract the spectrum chain.
+            If a .h5 file is given, data must be saved as attributes in the group named "spec_chain".
+            Else, the code try to execute pandas.read_csv(filename, **kwargs).
+        
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        **kwargs
+            pandas.DataFrame.read_csv kwargs.
         
         
         Returns
@@ -644,7 +658,8 @@ class Prospector():
         Void
         """
         from .spectrum import ProspectorSpectrum
-        self._spectrum = ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps)
+        self._spectrum = ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps,
+                                            filename=filename, warnings=warnings, **kwargs)
     
     def write_h5(self, savefile):
         """
@@ -673,7 +688,7 @@ class Prospector():
             _h5f.flush()
         
     @classmethod
-    def from_h5(cls, filename, warnings=True):
+    def from_h5(cls, filename, build_sps=True, warnings=True):
         """
         Build and return a Prospector object from a .h5 file.
         
@@ -684,6 +699,10 @@ class Prospector():
         
         Options
         -------
+        build_sps : [bool]
+            If True, build the SPS instance based on the built model and "zcontinuous" running parameter saved in the file.
+            Default is True.
+        
         warnings : [bool]
             If True, allow the warnings to be printed.
             Default is True.
@@ -718,17 +737,17 @@ class Prospector():
                         warn("The model has been built with dependance functions, if any, with their default inputs.")
                 except:
                     if warnings:
-                        warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and "+
+                        warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and",
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
             # Load SPS
             #try:
             #    _this.build_sps(sps=pickle.loads(_h5f["sps"][()]))
             #except(KeyError):
-            if _this.has_model():
+            if _this.has_model() and build_sps:
                 _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
             else:
                 if warnings:
-                    warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
+                    warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built.",
                          "You will have to build it yourself.")
         
         # Set chains
@@ -1207,10 +1226,10 @@ class Prospector():
         if not hasattr(self, "_spectrum"):
             if self.has_fit_output():
                 self.set_chains(data=self.fit_output, start=None)
-                self._load_spectrum_()
+                self.load_spectrum()
             elif self.has_h5_results():
                 self.set_chains(data=self.h5_results, start=None)
-                self._load_spectrum_()
+                self.load_spectrum()
             else:
                 raise AttributeError("You did not run the SED fit ('self.run_fit').")
         return self._spectrum
