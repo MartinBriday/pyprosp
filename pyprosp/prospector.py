@@ -661,6 +661,18 @@ class Prospector():
         self._spectrum = ProspectorSpectrum(chains=self.chains, model=self.model, obs=self.obs, sps=self.sps,
                                             filename=filename, warnings=warnings, **kwargs)
     
+    def load_phys_params(self):
+        """
+        Load a physical parameters instance and set it as attribute.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from .phys_params import ProspectorPhysParams
+        self._phys_params = ProspectorPhysParams(chains=self.chains, model.self.model)
+    
     def write_h5(self, savefile):
         """
         Save the fitting results and every fitter inputs (apart from the 'sps') in a given file.
@@ -1233,5 +1245,19 @@ class Prospector():
             else:
                 raise AttributeError("You did not run the SED fit ('self.run_fit').")
         return self._spectrum
+    
+    @property
+    def phys_params(self):
+        """ ProspectorPhysParams instance """
+        if not hasattr(self, "_phys_params"):
+            if self.has_fit_output():
+                self.set_chains(data=self.fit_output, start=None)
+                self.load_phys_params()
+            elif self.has_h5_results():
+                self.set_chains(data=self.h5_results, start=None)
+                self.load_phys_params()
+            else:
+                raise AttributeError("You did not run the SED fit ('self.run_fit').")
+        return self._phys_params
     
     

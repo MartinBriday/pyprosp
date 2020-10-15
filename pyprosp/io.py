@@ -32,7 +32,15 @@ _DEFAULT_FILTER_CONFIG = {"sdss":{_f:f"sdss_{_f}0" for _f in ["u", "g", "r", "i"
                           "2mass":{_f:f"twomass_{_f}" for _f in ["H", "J", "Ks"]},
                           "wise":{_f:f"wise_{_f}" for _f in ["w1", "w2", "w3", "w4"]},
                           }
-                          
+
+_DEFAULT_PHYS_PARAMS = {"z":"zred",
+                        "mass":"mass",
+                        "total_mass":"total_mass",
+                        "z_fraction":"z_fraction",
+                        "sfr":"sfr",
+                        "logsfr_ratios":"logsfr_ratios", 
+                        }
+
 def keys_to_filters(keys):
     """
     Convert dataframe keys to filters.

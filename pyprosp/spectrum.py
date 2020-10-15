@@ -99,7 +99,7 @@ class ProspectorSpectrum():
             self._spec_chain = self.read_file(filename=filename, warnings=warnings, **kwargs)
     
     @classmethod
-    def from_h5(cls, filename, warnings=True):
+    def from_h5(cls, filename, warnings=True, **kwargs):
         """
         Build a ProspectorSpectrum object directly from a .h5 file containing the results of a prospector fit.
         If the given file contains the spectrum chain, it will be automatically loaded.
