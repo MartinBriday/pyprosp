@@ -671,7 +671,7 @@ class Prospector():
         Void
         """
         from .phys_params import ProspectorPhysParams
-        self._phys_params = ProspectorPhysParams(chains=self.chains, model.self.model)
+        self._phys_params = ProspectorPhysParams(chains=self.chains, model=self.model)
     
     def write_h5(self, savefile):
         """
@@ -749,7 +749,7 @@ class Prospector():
                         warn("The model has been built with dependance functions, if any, with their default inputs.")
                 except:
                     if warnings:
-                        warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and",
+                        warn("Cannot build the 'model' for this object as it doesn't exist in the .h5 file and ",+
                              "there is an error building it from the saved 'model_params', you must build it yourself.")
             # Load SPS
             #try:
@@ -757,9 +757,9 @@ class Prospector():
             #except(KeyError):
             if _this.has_model() and build_sps:
                 _this.build_sps(zcontinuous=_this.run_params["zcontinuous"])
-            else:
+            elif not _this.has_model() and build_sps:
                 if warnings:
-                    warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built.",
+                    warn("Cannot build the SPS as it doesn't exist in the .h5 file and the 'model' is not built. "+
                          "You will have to build it yourself.")
         
         # Set chains

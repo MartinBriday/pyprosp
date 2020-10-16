@@ -1,11 +1,14 @@
 
 import pandas
 import numpy as np
+from warnings import warn
 
 from . import tools
 from . import io
 from prospect.models import transforms
 
+
+PHYS_PARAMS = io._DEFAULT_PHYS_PARAMS.copy()
 
 class ProspectorPhysParams():
     """
@@ -133,7 +136,7 @@ class ProspectorPhysParams():
         Options
         -------
         default : [bool, float, string or list, etc.]
-            If it cannot either find the given parameter in the model or the initial value for this parameter, return 'default'.
+            If there is no initial value for the given parameter, return 'default'.
             Default is -999.
         
         
@@ -141,9 +144,59 @@ class ProspectorPhysParams():
         -------
         bool, float, string or list, etc.
         """
-        return self.model_dict[param].get("init", default) if self._has_param_(param) else default
+        if self._has_param_(param):
+            return self.model_dict[param].get("init", default)
+        else:
+            raise KeyError(f"'{param}' is not in the model.")
     
-    def _get_param_chain_(self, param, default=-999)
+    def _get_param_N_(self, param, default=None):
+        """
+        Return the length of the given parameter (single value or vector).
+        
+        Parameters
+        ----------
+        param : [string]
+            Parameter's name.
+        
+        Options
+        -------
+        default : [bool, float, string or list, etc.]
+            If there is no initial value for the given parameter, return 'default'.
+            Default is None.
+        
+        
+        Returns
+        -------
+        int
+        """
+        if self._has_param_(param):
+            return self.model_dict[param].get("N", default)
+        else:
+            raise KeyError(f"'{param}' is not in the model.")
+    
+    def _get_init_chain_(self, param, default=-999):
+        """
+        Return an array filled with the initial value of the given parameter with same length as for the chains.
+        
+        Parameters
+        ----------
+        param : [string]
+            Parameter's name.
+        
+        Options
+        -------
+        default : [bool, float, string or list, etc.]
+            If there is no initial value for the given parameter, return 'default'.
+            Default is -999.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        return np.ones(self.len_chains)*self._get_param_init_(param=param, default=default)
+    
+    def _get_param_chain_(self, param, default=-999):
         """
         Return a chain of the given parameter, either the fitted one or an array filled by the initial value.
         
@@ -164,10 +217,13 @@ class ProspectorPhysParams():
         -------
         array
         """
+        _n = self._get_param_N_(param)
         if self._is_param_free_(param):
-            return self.param_chains[param]
+            return self.param_chains[param] if _n == 1 else \
+                   np.array([self.param_chains[f"{param}_{ii+1}"] for ii in np.arange(_n)])
         else:
-            return np.ones(self.len_chains)*self._get_param_init_(param=param, default=default)
+            return self._get_init_chain_(param, default) if _n == 1 else \
+                   np.array([self._get_init_chain_(param, default) for ii in np.arange(_n)])
     
     def set_z(self):
         """
@@ -178,7 +234,7 @@ class ProspectorPhysParams():
         -------
         Void
         """
-        self.phys_params_chains["z"] = self._get_param_chain_(io._DEFAULT_PHYS_PARAMS["z"])
+        self.phys_params_chains["z"] = self._get_param_chain_(PHYS_PARAMS["z"]["prosp_name"])
     
     def set_mass(self):
         """
@@ -189,18 +245,22 @@ class ProspectorPhysParams():
         -------
         Void
         """
-        _mass = io._DEFAULT_PHYS_PARAMS["mass"]
-        if self._is_param_free_(_mass):
-            if self.model_dict[_mass]["N"] == 1
-                self.phys_params_chains["mass"] = self.param_chains[_mass]
-            else:
-                _masses = self.param_chains[f"{_mass}_{ii+1}"] for ii in np.arange(self.model_dict[_mass]["N"])]
-                self.phys_params_chains["mass"] = np.sum(_masses, axis=0)
+        if self._is_param_free_(PHYS_PARAMS["mass"]["prosp_name"]):
+            _mass = self._get_param_chain_(PHYS_PARAMS["mass"]["prosp_name"])
+            self.phys_params_chains["mass"] = np.sum(np.atleast_2d(_mass), axis=0)
         elif self.has_agebins():
-            if self._has_param_(io._DEFAULT_PHYS_PARAMS["z_fraction"]):
-                self.phys_params_chains["mass"] = self._get_param_chain_(io._DEFAULT_PHYS_PARAMS["total_mass"])
-            elif self._has_param_(io._DEFAULT_PHYS_PARAMS["logmass"]):
-                self.phys_params_chains["mass"] = 10 ** self._get_param_chain_(io._DEFAULT_PHYS_PARAMS["logmass"])
+            if self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"]):
+                self.phys_params_chains["mass"] = self._get_param_chain_(PHYS_PARAMS["total_mass"]["prosp_name"])
+            elif self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]):
+                #_logmass = self._get_param_chain_(PHYS_PARAMS["log(mass)"]["prosp_name"])
+                #_logsfr_ratios = self._get_param_chain_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"])
+                #_agebins = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["agebins"]]
+                #_mass = [np.sum(transforms.logsfr_ratios_to_masses(logmass=_logmass[ii],
+                #                                                   logsfr_ratios=_logsfr_ratios.T[ii],
+                #                                                   agebins=_agebins))
+                #         for ii in np.arange(self.len_chains)]
+                #self.phys_params_chains["mass"] = np.array(_mass)
+                self.phys_params_chains["mass"] = 10 ** self._get_param_chain_(PHYS_PARAMS["logmass"]["prosp_name"])
     
     def set_sfr(self):
         """
@@ -211,10 +271,87 @@ class ProspectorPhysParams():
         -------
         Void
         """
-        _sfr = io._DEFAULT_PHYS_PARAMS["sfr"]
-        if self._is_param_free_(_sfr):
-            self.phys_params_chains["sfr"] = self.param_chains[_sfr]
-            
+        if self._is_param_free_(PHYS_PARAMS["sfr"]["prosp_name"]):
+            _sfr = self._get_param_chain_(PHYS_PARAMS["sfr"]["prosp_name"])
+            self.phys_params_chains["sfr"] = np.sum(np.atleast_2d(_sfr), axis=0)
+        #elif self.has_agebins():
+        
+    
+    def reset(self):
+        """
+        Reset the 'phys_params_chains' attribute to None.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        self._phys_params_chains = None
+    
+    def set_phys_params(self, params="*", reset=False):
+        """
+        Extract the desired physical parameters and store their chain in the attribute 'phys_params_chains'.
+        
+        Parameters
+        ----------
+        params : [string or list(string)]
+            List of physical parameters.
+            If "*", set every available physical parameters.
+            Default is "*".
+        
+        Options
+        -------
+        reset : [bool]
+            If True, reset the attribute 'phys_params_chains'.
+            Default is False.
+        
+        
+        Returns
+        -------
+        Void
+        """
+        if reset:
+            self.reset()
+        if params in ["*", "all"]:
+            params = list(PHYS_PARAMS.keys())
+        for _param in np.atleast_1d(params):
+            if _param in ["total_mass"]:
+                continue
+            try:
+                eval(f"self.set_{_param}")()
+            except AttributeError:
+                try:
+                    self.phys_params_chains[_param] = self._get_param_chain_(PHYS_PARAMS[_param]["prosp_name"])
+                except KeyError:
+                    continue
+            except Exception:
+                warn(f"You tried to set the physical parameter '{_param}' for which it raised the error: {Exception}")
+    
+    def get_phys_params(self, params="*", reset=False):
+        """
+        Return the physical parameters in a dictionary containing, for each desired parameter,
+        a tuple (median, -sigma, +sigma) from the corresponding chain.
+        
+        Parameters
+        ----------
+        params : [string or list(string)]
+            List of physical parameters.
+            If "*", set every available physical parameters.
+            Default is "*".
+        
+        Options
+        -------
+        reset : [bool]
+            If True, reset the attribute 'phys_params_chains'.
+            Default is False.
+        
+        
+        Returns
+        -------
+        dict
+        """
+        self.set_phys_params(params=params, reset=reset)
+        return self.phys_params
     
     
     
@@ -258,16 +395,16 @@ class ProspectorPhysParams():
         return "agebins" in self.model.config_dict
     
     @property
-    def phys_params_chain(self):
+    def phys_params_chains(self):
         """ Dictionary containing the chain of every physical parameters """
-        if not hasattr(self, "_phys_params_chains"):
+        if not hasattr(self, "_phys_params_chains") or self._phys_params_chains is None:
             self._phys_params_chains = {}
         return self._phys_params_chains
     
     @property
     def phys_params(self):
         """ Dictionary containing for every physical parameters a tuple (median, -sigma, +sigma) """
-        _phys_params = {_pp:np.percentiles(_ppc, [16, 50, 84]) for _pp, _ppv in self.phys_params_chain.items()}
-        return {_pp:(_ppv[1], _ppv[1]-_ppv[0], _ppv[2]-_ppv[1]) for _pp, _ppv in _phys_params}
+        _phys_params = {_pp:np.percentile(_ppc, [16, 50, 84]) for _pp, _ppc in self.phys_params_chains.items()}
+        return {_pp:(_ppv[1], _ppv[1]-_ppv[0], _ppv[2]-_ppv[1]) for _pp, _ppv in _phys_params.items()}
     
     
