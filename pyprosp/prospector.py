@@ -245,7 +245,7 @@ class Prospector():
                         warn("Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant (: {})".format(spec_mask))
         self._obs = fix_obs(self._obs)
         if verbose:
-            print(self._get_box_title(title="Built obs", box="\n#=#\n#   {}   #\n#=#\n"))
+            print(tools.get_box_title(title="Built obs", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(self.obs)
     
     #===================#
@@ -311,7 +311,7 @@ class Prospector():
             _model["zred"].update({"isfree":True})
         
         if verbose:
-            print(self._get_box_title(title="Built model", box="\n#=#\n#   {}   #\n#=#\n"))
+            print(tools.get_box_title(title="Built model", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         self._model = SedModel(_model)
@@ -354,7 +354,7 @@ class Prospector():
         
         _model = self.model.config_dict
         if verbose:
-            print(self._get_box_title(title="Previous model", box="\n#=#\n#   {}   #\n#=#\n"))
+            print(tools.get_box_title(title="Previous model", box="\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         #Changes
@@ -369,7 +369,7 @@ class Prospector():
             _model = self._model_removings_(_model, removings, warnings)
         
         if verbose:
-            print(self._get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
+            print(tools.get_box_title(title="New model", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
             pprint(_model)
         
         self._model = SedModel(_model)
@@ -960,7 +960,7 @@ class Prospector():
         Void
         """
         from prospect.models import priors as p_priors
-        print(Prospector._get_box_title(title="Prior descriptions", box="\n#=#\n#   {}   #\n#=#\n"))
+        print(tools.get_box_title(title="Prior descriptions", box="\n#=#\n#   {}   #\n#=#\n"))
         _prior_list = p_priors.__all__.copy()
         _prior_list.remove("Prior")
         print("Available priors: {}.\n".format(", ".join(_prior_list)))
@@ -975,7 +975,7 @@ class Prospector():
                 if _name not in _prior_list:
                     warn("'{}' is not an available prior.".format(_name))
                     continue
-                print(Prospector._get_box_title(title=_name, box="\n+-+\n|   {}   |\n+-+\n"))
+                print(tools.get_box_title(title=_name, box="\n+-+\n|   {}   |\n+-+\n"))
                 _pdoc = eval("p_priors."+_name).__doc__
                 _pdoc = _pdoc.replace(":param", "-")
                 if type(_p) == dict:
@@ -1004,16 +1004,16 @@ class Prospector():
         """
         from prospect.models.templates import TemplateLibrary
         
-        print(Prospector._get_box_title(title="Availbale templates", box="\n#=#\n#   {}   #\n#=#\n"))
+        print(tools.get_box_title(title="Availbale templates", box="\n#=#\n#   {}   #\n#=#\n"))
         TemplateLibrary.show_contents()
         
         if templates in ["*", "all"]:
             templates = list(TemplateLibrary._descriptions.keys())
         if templates is not None and not np.all([_t not in TemplateLibrary._descriptions.keys() for _t in np.atleast_1d(templates)]):
-            print(Prospector._get_box_title(title="Template descriptions", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
+            print(tools.get_box_title(title="Template descriptions", box="\n\n\n#=#\n#   {}   #\n#=#\n"))
             for _t in np.atleast_1d(templates):
                 if _t in TemplateLibrary._descriptions.keys():
-                    print(Prospector._get_box_title(title=_t, box="+-+\n|   {}   |\n+-+"))
+                    print(tools.get_box_title(title=_t, box="+-+\n|   {}   |\n+-+"))
                     TemplateLibrary.describe(_t)
                     print("\n")
     
@@ -1043,12 +1043,12 @@ class Prospector():
         _fitters = ["optimize", "emcee", "dynesty"]
         _rejected_params = ["obs", "sps", "model", "noise", "lnprobfn", "hfile"]
         _list_fitter = np.atleast_1d(which) if which not in ["*", "all"] else _fitters
-        print(Prospector._get_box_title(title="Running parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
+        print(tools.get_box_title(title="Running parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
         for _f in _list_fitter:
             if _f not in _fitters:
                 warn("'{}' is not a know fitter.".format(_f))
                 continue
-            print(Prospector._get_box_title(title=_f, box="\n+-+\n|   {}   |\n+-+\n"))
+            print(tools.get_box_title(title=_f, box="\n+-+\n|   {}   |\n+-+\n"))
             _doc = eval("run_"+_f).__doc__.split(":param ")
             _doc = [_d for _d in _doc if _d.split(":")[0] not in _rejected_params and len(_d.split(":")[0].split(" "))==1]
             _doc[-1] = _doc[-1].split("Returns")[0]
@@ -1056,36 +1056,6 @@ class Prospector():
             if _f == "dynesty":
                 print("    There are more informations on these parameters at:\n"+
                       "        https://dynesty.readthedocs.io/en/latest/api.html#dynesty.dynesty.DynamicNestedSampler\n")
-    
-    @staticmethod
-    def _get_box_title(title, box="\n#=#\n#   {}   #\n#=#\n"):
-        """
-        Return the title in a custom box as a string.
-        
-        Parameters
-        ----------
-        title : [string]
-            Title to prinnt in the custom box.
-        
-        box : [string]
-            Custom box format which will be adapted to the given title.
-            Must contain "{}" in which the title will be included.
-            Default is "\n#=#\n#   {}   #\n#=#\n".
-        
-        
-        Returns
-        -------
-        string
-        """
-        _box = [ii.format(title) for ii in box.split("\n")]
-        _title = [_b for _b in _box if title in _b][0]
-        for ii, _b in enumerate(_box):
-            if _b != _title and _b != "" and _b is not None:
-                _box_edge = list(_b)
-                _ii_mid = int(len(_box_edge) / 2)
-                _box_edge[_ii_mid] = "".join([_box_edge[1]]*(len(_title)-(len(_box_edge)-1)))
-                _box[ii] = "".join(_box_edge)
-        return "\n".join(_box)
     
     
     

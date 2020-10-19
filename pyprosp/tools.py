@@ -408,3 +408,32 @@ def sfh_delay_tau_to_sfr(tage, tau, mass):
     """
     from scipy.special import gamma, gammainc
     return mass * (tage/tau**2) * np.exp(-tage/tau) / (gamma(2) * gammainc(2, tage/tau)) * 1e-9
+
+def get_box_title(title, box="\n#=#\n#   {}   #\n#=#\n"):
+    """
+    Return the title in a custom box as a string.
+    
+    Parameters
+    ----------
+    title : [string]
+        Title to prinnt in the custom box.
+    
+    box : [string]
+        Custom box format which will be adapted to the given title.
+        Must contain "{}" in which the title will be included.
+        Default is "\n#=#\n#   {}   #\n#=#\n".
+    
+    
+    Returns
+    -------
+    string
+    """
+    _box = [ii.format(title) for ii in box.split("\n")]
+    _title = [_b for _b in _box if title in _b][0]
+    for ii, _b in enumerate(_box):
+        if _b != _title and _b != "" and _b is not None:
+            _box_edge = list(_b)
+            _ii_mid = int(len(_box_edge) / 2)
+            _box_edge[_ii_mid] = "".join([_box_edge[1]]*(len(_title)-(len(_box_edge)-1)))
+            _box[ii] = "".join(_box_edge)
+    return "\n".join(_box)

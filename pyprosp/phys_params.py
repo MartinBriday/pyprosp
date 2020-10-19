@@ -76,19 +76,19 @@ class ProspectorPhysParams():
     
     def _has_param_(self, param):
         """
-        Test that a given parameter is in the model.
+        Test that a given parameter.s is/are in the model.
         
         Parameters
         ----------
-        param : [string]
-            Parameter's name.
+        param : [string or list(string)]
+            Parameter's name(s).
             
         
         Returns
         -------
         bool
         """
-        return param in self.model_dict
+        return np.all([_param in self.model_dict for _param in np.atleast_1d(param)])
     
     def _is_param_free_(self, param):
         """
@@ -225,57 +225,133 @@ class ProspectorPhysParams():
             return self._get_init_chain_(param, default) if _n == 1 else \
                    np.array([self._get_init_chain_(param, default) for ii in np.arange(_n)])
     
-    def set_z(self):
+    def get_z(self):
         """
-        Set up redshift.
+        Return redshift chain.
         
         
         Returns
         -------
-        Void
+        np.array
         """
-        self.phys_params_chains["z"] = self._get_param_chain_(PHYS_PARAMS["z"]["prosp_name"])
+        return self._get_param_chain_(PHYS_PARAMS["z"]["prosp_name"])
     
-    def set_mass(self):
+    def get_mass(self):
         """
-        Set up stellar mass.
+        Return stellar mass chain.
         
         
         Returns
         -------
-        Void
+        np.array
         """
-        if self._is_param_free_(PHYS_PARAMS["mass"]["prosp_name"]):
+        if self._is_param_free_(PHYS_PARAMS["total_mass"]["prosp_name"]):
+            return self._get_param_chain_(PHYS_PARAMS["total_mass"]["prosp_name"])
+        elif self._is_param_free_(PHYS_PARAMS["logmass"]["prosp_name"]):
+            return 10 ** self._get_param_chain_(PHYS_PARAMS["logmass"]["prosp_name"])
+        else:
             _mass = self._get_param_chain_(PHYS_PARAMS["mass"]["prosp_name"])
-            self.phys_params_chains["mass"] = np.sum(np.atleast_2d(_mass), axis=0)
-        elif self.has_agebins():
-            if self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"]):
-                self.phys_params_chains["mass"] = self._get_param_chain_(PHYS_PARAMS["total_mass"]["prosp_name"])
-            elif self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]):
-                #_logmass = self._get_param_chain_(PHYS_PARAMS["log(mass)"]["prosp_name"])
-                #_logsfr_ratios = self._get_param_chain_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"])
-                #_agebins = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["agebins"]]
-                #_mass = [np.sum(transforms.logsfr_ratios_to_masses(logmass=_logmass[ii],
-                #                                                   logsfr_ratios=_logsfr_ratios.T[ii],
-                #                                                   agebins=_agebins))
-                #         for ii in np.arange(self.len_chains)]
-                #self.phys_params_chains["mass"] = np.array(_mass)
-                self.phys_params_chains["mass"] = 10 ** self._get_param_chain_(PHYS_PARAMS["logmass"]["prosp_name"])
+            return np.sum(np.atleast_2d(_mass), axis=0)
     
-    def set_sfr(self):
+    def get_log_mass(self):
         """
-        Set up Star Formation Rate (SFR).
+        Return stellar mass chain in log scale.
         
         
         Returns
         -------
-        Void
+        np.array
         """
-        if self._is_param_free_(PHYS_PARAMS["sfr"]["prosp_name"]):
-            _sfr = self._get_param_chain_(PHYS_PARAMS["sfr"]["prosp_name"])
-            self.phys_params_chains["sfr"] = np.sum(np.atleast_2d(_sfr), axis=0)
-        #elif self.has_agebins():
+        return np.log10(self.get_mass())
+    
+    def get_sfr(self):
+        """
+        Return Star Formation Rate (SFR) chain.
+        If there are age bins in the fitted model, return the most recent SFR.
         
+        
+        Returns
+        -------
+        np.array
+        """
+        if self.has_agebins():
+            _mass = self.get_mass()
+            _agebins = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["agebins"]]
+            if self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"]):
+                _z_fraction = self._get_param_chain_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"])
+                _sfr = [transforms.zfrac_to_sfr(total_mass=_mass[ii], z_fraction=_z_fraction.T[ii], agebins=_agebins)[0]
+                        for ii in np.arange(self.len_chains)]
+            elif self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]):
+                _logsfr_ratios = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]]["init"]
+                _logmass = np.log10(_mass)
+                _sfr = [transforms.zfrac_to_sfr(logmass=_logmass, logsfr_ratios=_logsfr_ratios.T[ii], agebins=_agebins)[0]
+                        for ii in np.arange(self.len_chains)]
+            else:
+                _sfr = None
+            return np.array(_sfr)
+        elif not self.has_agebins() and self._has_param_([PHYS_PARAMS[_p]["prosp_name"] for _p in ["tage", "tau", "mass"]]):
+            _tage, _tau, _mass = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "tau", "mass"]]
+            return tools.sfh_delay_tau_to_sfr(tage=_tage, tau=_tau, mass=_mass)
+        else:
+            _sfr = np.atleast_2d(self._get_param_chain_(PHYS_PARAMS["sfr"]["prosp_name"]))
+            return _sfr[0]
+    
+    def get_log_sfr(self):
+        """
+        Return Star Formation Rate (SFR) chain in log scale.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        return np.log10(self.get_sfr())
+    
+    def get_ssfr(self):
+        """
+        Return specific Star Formation Rate (SFR) chain.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        return self.get_sfr() / self.get_mass()
+    
+    def get_log_ssfr(self):
+        """
+        Return specific Star Formation Rate (SFR) chain in log scale.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        return np.log10(self.get_ssfr())
+    
+    def get_dust1(self):
+        """
+        Return the extra optical depth towards young stars (the FSPS 'dust1' parameter) chain.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        _dust2, _dust_ratio = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["dust2", "dust_ratio"]]
+        return _dust2 * _dust_ratio
+    
+    def get_tburst(self):
+        """
+        Return the "Time at wich SF burst happens" chain.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        _tage, _fage_burst = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "fage_burst"]]
+        return _tage * _fage_burst
     
     def reset(self):
         """
@@ -315,17 +391,19 @@ class ProspectorPhysParams():
         if params in ["*", "all"]:
             params = list(PHYS_PARAMS.keys())
         for _param in np.atleast_1d(params):
-            if _param in ["total_mass"]:
+            if _param in ["total_mass", "dust_ratio", "fage_burst"]:
                 continue
             try:
-                eval(f"self.set_{_param}")()
+                _chain = eval(f"self.get_{_param}")()
+                self.phys_params_chains[_param] = _chain
             except AttributeError:
                 try:
                     self.phys_params_chains[_param] = self._get_param_chain_(PHYS_PARAMS[_param]["prosp_name"])
                 except KeyError:
                     continue
-            except Exception:
-                warn(f"You tried to set the physical parameter '{_param}' for which it raised the error: {Exception}")
+            except Exception as _excpt:
+                warn(f"You tried to set the physical parameter '{_param}' for which it raised the error:\n"+
+                     f"{_excpt.__class__} --> {_excpt}.")
     
     def get_phys_params(self, params="*", reset=False):
         """
@@ -353,6 +431,31 @@ class ProspectorPhysParams():
         self.set_phys_params(params=params, reset=reset)
         return self.phys_params
     
+    
+    #------------------#
+    #   Descriptions   #
+    #------------------#
+    @staticmethod
+    def describe_phys_params():
+        """
+        Print description on available physical parameters:
+            - Key name to call/set it
+            - Description
+            - Unit
+            - Prospector/FSPS parameter name
+        
+        
+        Returns
+        -------
+        Void
+        """
+        from IPython.display import Latex
+        print(tools.get_box_title(title="Physical parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
+        for _p, _pv in PHYS_PARAMS.items():
+            if _p in ["total_mass", "dust_ratio", "fage_burst"]:
+                continue
+            display(Latex(f"""- {_p}:{f" [{_pv['unit']}]" if _pv['unit'] else ""}"""))
+            display(Latex("$\hspace{1cm}$"+f"{_pv['def']} (FSPS param's name = '{_pv['prosp_name']}')."))
     
     
     
@@ -389,7 +492,6 @@ class ProspectorPhysParams():
         """ List of the fitted parameters """
         return self.model.theta_labels()
     
-    @property
     def has_agebins(self):
         """ Test that 'agebins' parameter is in the model """
         return "agebins" in self.model.config_dict
