@@ -17,7 +17,22 @@ class ProspectorPhysParams():
     
     def __init__(self, **kwargs):
         """
+        Initialization.
+        Can execute 'set_data'.
         
+        Options
+        -------
+        chains : [np.array]
+            Fitted parameter chains.
+            Shape must be (nb of fitting step, nb of fitted parameters).
+        
+        model : [prospect.models.sedmodel.SedModel]
+            Prospector model object.
+        
+        
+        Returns
+        -------
+        Void
         """
         if kwargs != {}:
             self.set_data(**kwargs)
@@ -247,8 +262,8 @@ class ProspectorPhysParams():
         """
         if self._is_param_free_(PHYS_PARAMS["total_mass"]["prosp_name"]):
             return self._get_param_chain_(PHYS_PARAMS["total_mass"]["prosp_name"])
-        elif self._is_param_free_(PHYS_PARAMS["logmass"]["prosp_name"]):
-            return 10 ** self._get_param_chain_(PHYS_PARAMS["logmass"]["prosp_name"])
+        elif self._is_param_free_(PHYS_PARAMS["log_mass"]["prosp_name"]):
+            return 10 ** self._get_param_chain_(PHYS_PARAMS["log_mass"]["prosp_name"])
         else:
             _mass = self._get_param_chain_(PHYS_PARAMS["mass"]["prosp_name"])
             return np.sum(np.atleast_2d(_mass), axis=0)
@@ -364,7 +379,40 @@ class ProspectorPhysParams():
         """
         self._phys_params_chains = None
     
-    def set_phys_params(self, params="*", reset=False):
+    def _get_phys_param_chain_(self, param, warnings=True):
+        """
+        Extract and return the desired physical parameter chain.
+        
+        Parameters
+        ----------
+        params : [string]
+            Physical parameter's name.
+        
+        Options
+        -------
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
+        
+        Returns
+        -------
+        np.array
+        """
+        try:
+            return eval(f"self.get_{param}")()
+        except AttributeError:
+            try:
+                return self._get_param_chain_(PHYS_PARAMS[param]["prosp_name"])
+            except KeyError:
+                return
+        except Exception as _excpt:
+            if warnings:
+                warn(f"You tried to set the physical parameter '{param}' for which it raised the error:\n"+
+                     f"{_excpt.__class__} --> {_excpt}.")
+            return
+    
+    def set_phys_params(self, params="*", reset=False, warnings=True):
         """
         Extract the desired physical parameters and store their chain in the attribute 'phys_params_chains'.
         
@@ -381,6 +429,10 @@ class ProspectorPhysParams():
             If True, reset the attribute 'phys_params_chains'.
             Default is False.
         
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
         
         Returns
         -------
@@ -391,21 +443,13 @@ class ProspectorPhysParams():
         if params in ["*", "all"]:
             params = list(PHYS_PARAMS.keys())
         for _param in np.atleast_1d(params):
-            if _param in ["total_mass", "dust_ratio", "fage_burst"]:
+            if _param in ["total_mass", "logmass", "dust_ratio", "fage_burst"]:
                 continue
-            try:
-                _chain = eval(f"self.get_{_param}")()
+            _chain = self._get_phys_param_chain_(param=_param, warnings=warnings)
+            if _chain is not None:
                 self.phys_params_chains[_param] = _chain
-            except AttributeError:
-                try:
-                    self.phys_params_chains[_param] = self._get_param_chain_(PHYS_PARAMS[_param]["prosp_name"])
-                except KeyError:
-                    continue
-            except Exception as _excpt:
-                warn(f"You tried to set the physical parameter '{_param}' for which it raised the error:\n"+
-                     f"{_excpt.__class__} --> {_excpt}.")
     
-    def get_phys_params(self, params="*", reset=False):
+    def get_phys_params(self, params="*", reset=False, warnings=True):
         """
         Return the physical parameters in a dictionary containing, for each desired parameter,
         a tuple (median, -sigma, +sigma) from the corresponding chain.
@@ -423,13 +467,78 @@ class ProspectorPhysParams():
             If True, reset the attribute 'phys_params_chains'.
             Default is False.
         
+        warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
+        
         
         Returns
         -------
         dict
         """
-        self.set_phys_params(params=params, reset=reset)
+        self.set_phys_params(params=params, reset=reset, warnings=warnings)
         return self.phys_params
+    
+    #---------------#
+    #   Plottings   #
+    #---------------#
+    def show(self, params="*", savefile=None, **kwargs):
+        """
+        Draw a corner plot of the physical parameters.
+        
+        Parameters
+        ----------
+        params : [string or list(string)]
+            List of physical parameters.
+            If "*", set every available physical parameters.
+            Default is "*".
+        
+        Options
+        -------
+        savefile : [string or None]
+            Give a directory to save the figure.
+            Default is None (not saved).
+        
+        **kwargs:
+            corner.corner (or triangle.corner) kwargs
+        
+        
+        Returns
+        -------
+        matplotlib.Figure
+        """
+        try:
+            import corner as triangle
+        except(ImportError):
+            import triangle
+        except:
+            raise ImportError("Please install the `corner` package.")
+        
+        if params in ["*", "all"]:
+            params = list(PHYS_PARAMS.keys())
+        
+        _labels = []
+        _chains = []
+        for _param in np.atleast_1d(params):
+            if _param in ["total_mass", "logmass", "dust_ratio", "fage_burst"]:
+                continue
+            _chain = self._get_phys_param_chain_(param=_param, warnings=False)
+            if _chain is not None:
+                if np.all([_cv == _chain[0] for _cv in _chain]):
+                    continue
+                _labels.append(_param)
+                _chains.append(_chain)
+        _chains = np.array(_chains)
+        
+        _kwargs = {"plot_datapoints": False, "plot_density": False, "fill_contours": True, "show_titles": True}
+        _kwargs.update(kwargs)
+        
+        _fig = triangle.corner(_chains.T, labels=_labels, quantiles=[0.16, 0.5, 0.84], **_kwargs)
+        
+        if savefile is not None:
+            _fig.savefig(savefile)
+        
+        return _fig
     
     
     #------------------#
@@ -451,11 +560,15 @@ class ProspectorPhysParams():
         """
         from IPython.display import Latex
         print(tools.get_box_title(title="Physical parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
+        print("You can get physical parameter values running 'get_phys_params' method on a loaded instance.")
+        print("""You can either give as argument one or a list of the following keys, or "*" to get all of them.""")
+        print("(Note that you'll finally only get the available ones depending on the SED fitted model)")
         for _p, _pv in PHYS_PARAMS.items():
             if _p in ["total_mass", "dust_ratio", "fage_burst"]:
                 continue
             display(Latex(f"""- {_p}:{f" [{_pv['unit']}]" if _pv['unit'] else ""}"""))
-            display(Latex("$\hspace{1cm}$"+f"{_pv['def']} (FSPS param's name = '{_pv['prosp_name']}')."))
+            display(Latex("$\hspace{1cm}$"+f"{_pv['def']}"+
+                          (f" (FSPS param's name = '{_pv['prosp_name']}')." if _pv["prosp_name"] else "")))
     
     
     

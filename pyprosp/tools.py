@@ -390,21 +390,24 @@ def synthesize_photometry(lbda, flux, filter_lbda, filter_trans, normed=True):
 
 def sfh_delay_tau_to_sfr(tage, tau, mass):
     """
-    Conversion from SFH to SFR based on a delay-tau model.
-    The returned SFR is in Msun/year.
+    Conversion from SFH to SFR, based on a delay-tau model.
+    The returned SFR is in M_sun/year.
     
     Parameters
     ----------
-    tage : [float]
+    tage : [float or array]
+        Stellar age.
     
-    tau : [float]
+    tau : [float or array]
+        Exponentially declining Star Formation Histories (SFH) tau exposant.
     
-    mass : [float]
+    mass : [float or array]
+        Stellar mass.
     
     
     Returns
     -------
-    float
+    float or np.array
     """
     from scipy.special import gamma, gammainc
     return mass * (tage/tau**2) * np.exp(-tage/tau) / (gamma(2) * gammainc(2, tage/tau)) * 1e-9
