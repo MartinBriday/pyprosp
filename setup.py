@@ -1,16 +1,16 @@
 #! /usr/bin/env python
 #
 
-DESCRIPTION = "pykcorr: K-correct photometric measurements after SED fitting shifted to z = 0."
-LONG_DESCRIPTION = """ pykcorr: K-correct photometric measurements after SED fitting shifted to z = 0. """
+DESCRIPTION = "pyprosp: K-correct photometric measurements after SED fitting shifted to z = 0."
+LONG_DESCRIPTION = """ pyprosp: K-correct photometric measurements after SED fitting shifted to z = 0. """
 
-DISTNAME = 'pykcorr'
+DISTNAME = 'pyprosp'
 AUTHOR = 'Martin Briday'
 MAINTAINER = 'Martin Briday' 
 MAINTAINER_EMAIL = 'briday@ipnl.in2p3.fr'
-URL = 'https://github.com/MartinBriday/pykcorr'
+URL = 'https://github.com/MartinBriday/pyprosp'
 LICENSE = 'Apache 2.0'
-DOWNLOAD_URL = 'https://github.com/MartinBriday/pykcorr'
+DOWNLOAD_URL = 'https://github.com/MartinBriday/pyprosp'
 VERSION = '0.2.1'
 
 try:
@@ -23,14 +23,9 @@ def check_dependencies():
     install_requires = []
 
     try:
-        import propobject
+        import prospect
     except ImportError:
-        install_requires.append('propobject')
-
-    try:
-        import astrobject
-    except ImportError:
-        install_requires.append('sedkcorr')
+        install_requires.append('prospect')
        
      
     return install_requires
@@ -44,7 +39,7 @@ if __name__ == "__main__":
         print(packages)
     else:
         # This should be updated if new submodules are added
-        packages = ['pykcorr']
+        packages = ['pyprosp']
 
     setup(name=DISTNAME,
           author=AUTHOR,
@@ -59,7 +54,7 @@ if __name__ == "__main__":
           download_url=DOWNLOAD_URL,
           install_requires=install_requires,
           packages=packages,
-          package_data={"pykcorr":["filter_bandpass/*.dat"]},
+          package_data={},
           classifiers=[
               'Intended Audience :: Science/Research',
               'Programming Language :: Python :: 2.7',

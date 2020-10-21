@@ -1,5 +1,4 @@
 
-import pandas
 import numpy as np
 from warnings import warn
 
@@ -526,7 +525,7 @@ class ProspectorPhysParams():
             if _chain is not None:
                 if np.all([_cv == _chain[0] for _cv in _chain]):
                     continue
-                _labels.append(_param)
+                _labels.append(PHYS_PARAMS[_param]["label"] if PHYS_PARAMS[_param]["label"] else _param)
                 _chains.append(_chain)
         _chains = np.array(_chains)
         
@@ -558,7 +557,7 @@ class ProspectorPhysParams():
         -------
         Void
         """
-        from IPython.display import Latex
+        from IPython.display import display, Latex
         print(tools.get_box_title(title="Physical parameters description", box="\n#=#\n#   {}   #\n#=#\n"))
         print("You can get physical parameter values running 'get_phys_params' method on a loaded instance.")
         print("""You can either give as argument one or a list of the following keys, or "*" to get all of them.""")
