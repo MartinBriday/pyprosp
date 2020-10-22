@@ -7,12 +7,11 @@ from . import io
 from prospect.models import transforms
 
 
-PHYS_PARAMS = io._DEFAULT_PHYS_PARAMS.copy()
-
 class ProspectorPhysParams():
     """
     This class a physical parameters extractor from 'prospector' SED fitting results.
     """
+    PHYS_PARAMS = io._DEFAULT_PHYS_PARAMS.copy()
     
     def __init__(self, **kwargs):
         """
@@ -248,7 +247,7 @@ class ProspectorPhysParams():
         -------
         np.array
         """
-        return self._get_param_chain_(PHYS_PARAMS["z"]["prosp_name"])
+        return self._get_param_chain_(self.PHYS_PARAMS["z"]["prosp_name"])
     
     def get_mass(self):
         """
@@ -259,12 +258,12 @@ class ProspectorPhysParams():
         -------
         np.array
         """
-        if self._is_param_free_(PHYS_PARAMS["total_mass"]["prosp_name"]):
-            return self._get_param_chain_(PHYS_PARAMS["total_mass"]["prosp_name"])
-        elif self._is_param_free_(PHYS_PARAMS["log_mass"]["prosp_name"]):
-            return 10 ** self._get_param_chain_(PHYS_PARAMS["log_mass"]["prosp_name"])
+        if self._is_param_free_(self.PHYS_PARAMS["total_mass"]["prosp_name"]):
+            return self._get_param_chain_(self.PHYS_PARAMS["total_mass"]["prosp_name"])
+        elif self._is_param_free_(self.PHYS_PARAMS["log_mass"]["prosp_name"]):
+            return 10 ** self._get_param_chain_(self.PHYS_PARAMS["log_mass"]["prosp_name"])
         else:
-            _mass = self._get_param_chain_(PHYS_PARAMS["mass"]["prosp_name"])
+            _mass = self._get_param_chain_(self.PHYS_PARAMS["mass"]["prosp_name"])
             return np.sum(np.atleast_2d(_mass), axis=0)
     
     def get_log_mass(self):
@@ -303,11 +302,11 @@ class ProspectorPhysParams():
             else:
                 _sfr = None
             return np.array(_sfr)
-        elif not self.has_agebins() and self._has_param_([PHYS_PARAMS[_p]["prosp_name"] for _p in ["tage", "tau", "mass"]]):
-            _tage, _tau, _mass = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "tau", "mass"]]
+        elif not self.has_agebins() and self._has_param_([self.PHYS_PARAMS[_p]["prosp_name"] for _p in ["tage", "tau", "mass"]]):
+            _tage, _tau, _mass = [self._get_param_chain_(self.PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "tau", "mass"]]
             return tools.sfh_delay_tau_to_sfr(tage=_tage, tau=_tau, mass=_mass)
         else:
-            _sfr = np.atleast_2d(self._get_param_chain_(PHYS_PARAMS["sfr"]["prosp_name"]))
+            _sfr = np.atleast_2d(self._get_param_chain_(self.PHYS_PARAMS["sfr"]["prosp_name"]))
             return _sfr[0]
     
     def get_log_sfr(self):
@@ -352,7 +351,7 @@ class ProspectorPhysParams():
         -------
         np.array
         """
-        _dust2, _dust_ratio = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["dust2", "dust_ratio"]]
+        _dust2, _dust_ratio = [self._get_param_chain_(self.PHYS_PARAMS[_p]["prosp_name"]) for _p in ["dust2", "dust_ratio"]]
         return _dust2 * _dust_ratio
     
     def get_tburst(self):
@@ -364,7 +363,7 @@ class ProspectorPhysParams():
         -------
         np.array
         """
-        _tage, _fage_burst = [self._get_param_chain_(PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "fage_burst"]]
+        _tage, _fage_burst = [self._get_param_chain_(self.PHYS_PARAMS[_p]["prosp_name"]) for _p in ["tage", "fage_burst"]]
         return _tage * _fage_burst
     
     def reset(self):
@@ -402,7 +401,7 @@ class ProspectorPhysParams():
             return eval(f"self.get_{param}")()
         except AttributeError:
             try:
-                return self._get_param_chain_(PHYS_PARAMS[param]["prosp_name"])
+                return self._get_param_chain_(self.PHYS_PARAMS[param]["prosp_name"])
             except KeyError:
                 return
         except Exception as _excpt:
@@ -440,7 +439,7 @@ class ProspectorPhysParams():
         if reset:
             self.reset()
         if params in ["*", "all"]:
-            params = list(PHYS_PARAMS.keys())
+            params = list(self.PHYS_PARAMS.keys())
         for _param in np.atleast_1d(params):
             if _param in ["total_mass", "logmass", "dust_ratio", "fage_burst"]:
                 continue
@@ -514,7 +513,7 @@ class ProspectorPhysParams():
             raise ImportError("Please install the `corner` package.")
         
         if params in ["*", "all"]:
-            params = list(PHYS_PARAMS.keys())
+            params = list(self.PHYS_PARAMS.keys())
         
         _labels = []
         _chains = []
@@ -525,7 +524,7 @@ class ProspectorPhysParams():
             if _chain is not None:
                 if np.all([_cv == _chain[0] for _cv in _chain]):
                     continue
-                _labels.append(PHYS_PARAMS[_param]["label"] if PHYS_PARAMS[_param]["label"] else _param)
+                _labels.append(self.PHYS_PARAMS[_param]["label"] if self.PHYS_PARAMS[_param]["label"] else _param)
                 _chains.append(_chain)
         _chains = np.array(_chains)
         
@@ -562,7 +561,7 @@ class ProspectorPhysParams():
         print("You can get physical parameter values running 'get_phys_params' method on a loaded instance.")
         print("""You can either give as argument one or a list of the following keys, or "*" to get all of them.""")
         print("(Note that you'll finally only get the available ones depending on the SED fitted model)")
-        for _p, _pv in PHYS_PARAMS.items():
+        for _p, _pv in ProspectorPhysParams.PHYS_PARAMS.items():
             if _p in ["total_mass", "dust_ratio", "fage_burst"]:
                 continue
             display(Latex(f"""- {_p}:{f" [{_pv['unit']}]" if _pv['unit'] else ""}"""))

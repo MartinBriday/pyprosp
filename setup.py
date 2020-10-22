@@ -1,10 +1,8 @@
 #! /usr/bin/env python
 #
 
-DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, including a "\
-              "few posterior processes"
-LONG_DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, "\
-                   "including a few posterior processes"
+DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, including a few posterior processes"
+LONG_DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, including a few posterior processes"
 
 DISTNAME = 'pyprosp'
 AUTHOR = 'Martin Briday'
@@ -13,7 +11,7 @@ MAINTAINER_EMAIL = 'briday@ipnl.in2p3.fr'
 URL = 'https://github.com/MartinBriday/pyprosp'
 LICENSE = 'Apache 2.0'
 DOWNLOAD_URL = 'https://github.com/MartinBriday/pyprosp'
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 
 try:
     from setuptools import setup, find_packages
