@@ -1,8 +1,10 @@
 #! /usr/bin/env python
 #
 
-DESCRIPTION = "pyprosp: K-correct photometric measurements after SED fitting shifted to z = 0."
-LONG_DESCRIPTION = """ pyprosp: K-correct photometric measurements after SED fitting shifted to z = 0. """
+DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, including a "\
+              "few posterior processes"
+LONG_DESCRIPTION = "pyprosp: SED fitting using 'prospector' package, "\
+                   "including a few posterior processes"
 
 DISTNAME = 'pyprosp'
 AUTHOR = 'Martin Briday'

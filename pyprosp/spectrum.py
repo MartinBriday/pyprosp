@@ -1,6 +1,7 @@
 
 import pandas
 import numpy as np
+from warnings import warn
 
 from . import tools
 from . import io
@@ -95,7 +96,7 @@ class ProspectorSpectrum():
         self._obs = obs
         self._sps = sps
         self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
-        if file_spec_chain:
+        if filename:
             self._spec_chain = self.read_file(filename=filename, warnings=warnings, **kwargs)
     
     @classmethod
@@ -778,7 +779,6 @@ class ProspectorSpectrum():
         dict
         """
         import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
         import matplotlib.lines as mlines
         if ax is None:
             fig = plt.figure(figsize=figsize)

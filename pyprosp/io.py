@@ -4,14 +4,13 @@ import pandas
 import time
 import sys
 import os
-import warnings
+from warnings import warn
 
 from . import tools
 
 _DEFAULT_FILTER_CONFIG = {"sdss":{_f:f"sdss_{_f}0" for _f in ["u", "g", "r", "i", "z"]},
                           "galex":{"FUV":"galex_FUV", "NUV":"galex_NUV"},
                           "ps1":{_f:f"ps1_{_f}" for _f in ["g", "r", "i", "z", "y"]},
-                          "spitzer":{_f:f"spitzer_irac_ch{_f}" for _f in ["1", "2", "3", "4"]},
                           "spitzer":{_f0:f"spitzer_{_f1}" for _f0, _f1 in zip(["irac_1", "irac_2", "irac_3", "irac_4",
                                                                                "irs_blue", "mips_24", "mips_70", "mips_160"],
                                                                               ["irac_ch1", "irac_ch2", "irac_ch3", "irac_ch4",

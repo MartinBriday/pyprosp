@@ -10,6 +10,7 @@ from warnings import warn
 from pprint import pprint
 
 from . import io
+from . import tools
 
 class Prospector():
     """
@@ -142,7 +143,7 @@ class Prospector():
             except(KeyError):
                 self.__dict__[_attr] = None
                 if warnings:
-                    warn("Cannot set the '{}' attribute as there is no '{}' key in the 'obs' dictionary.".format(_attr, _obs_key))
+                    warn(f"Cannot set the '{_attr}' attribute as there is no '{_obs_key}' key in the 'obs' dictionary.")
         
         try:
             self._phot_in = {_filt:self.obs["maggies"][ii] for ii, _filt in enumerate(self.filters)}
@@ -185,7 +186,8 @@ class Prospector():
             Default is None.
         
         spec_mask : [tuple(float or None, float or None) or None]
-            Give a tuple of two wavelength in AA (lower_limit, upper_limit) to run the SED fitting on the input spectrum between the given limits.
+            Give a tuple of two wavelength in AA (lower_limit, upper_limit) to run 
+            the SED fitting on the input spectrum between the given limits.
             The rest of the spectrum is masked.
             You can give None for a limit to keep the whole spectrum in that direction.
             If None, the whole spectrum is fitted.
@@ -242,7 +244,7 @@ class Prospector():
                     self._obs["mask"] = _spec_mask
                 else:
                     if warnings:
-                        warn("Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant (: {})".format(spec_mask))
+                        warn(f"Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant ({spec_mask})")
         self._obs = fix_obs(self._obs)
         if verbose:
             print(tools.get_box_title(title="Built obs", box="\n#=#\n#   {}   #\n#=#\n"))
@@ -451,7 +453,7 @@ class Prospector():
                 _model.pop(_t)
             else:
                 if warnings:
-                    warn("Cannot remove '{}' as it doesn't exist in the current model.".format(_t))
+                    warn(f"Cannot remove '{_t}' as it doesn't exist in the current model.")
         return _model
     
     @staticmethod
@@ -477,10 +479,10 @@ class Prospector():
         """
         from prospect.models import priors as p_priors
         if verbose:
-            self.describe_priors(priors=priors)
+            Prospector.describe_priors(priors=priors)
         _priors = priors.copy()
         _name = _priors.pop("name")
-        return eval("p_priors.{}".format(_name))(**_priors)
+        return eval(f"p_priors.{_name}")(**_priors)
     
     #=================#
     #   Build 'sps'   #
@@ -573,7 +575,8 @@ class Prospector():
         self.run_params.update(run_params)
         
         #Fit
-        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, lnprobfn=lnprobfn, verbose=verbose, **self.run_params)
+        self._fit_output = fit_model(obs=self.obs, model=self.model, sps=self.sps, 
+                                     lnprobfn=lnprobfn, verbose=verbose, **self.run_params)
         
         if savefile is not None:
             self.write_h5(savefile=savefile)
@@ -742,8 +745,6 @@ class Prospector():
                 _this.build_model(model=pickle.loads(_h5f["model"][()]), verbose=False)
             except(KeyError):
                 try:
-                    _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()}
-                              for _p in _this.h5_results["model_params"]}
                     _this.build_model(model=_this._read_model_params(_this.h5_results["model_params"]), verbose=False)
                     if warnings:
                         warn("The model has been built with dependance functions, if any, with their default inputs.")
@@ -807,16 +808,17 @@ class Prospector():
         -------
         dict
         """
+        import pickle
         import prospect.models.transforms as ptrans
-        _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()} for _p in _result["model_params"]}
+        _model = {_p["name"]:{k:pickle.loads(v) if k=="prior" else v for k, v in _p.items()} for _p in model_params}
         for _p, _pv in _model.items():
             _pv.pop("name")
             if "depends_on" in _pv.keys():
                 if _pv["depends_on"][1] == "prospect.models.transforms":
-                    _pv["depends_on"] = eval("ptrans.{}".format(_pv["depends_on"][0]))()
+                    _pv["depends_on"] = eval(f"ptrans.{_pv['depends_on'][0]}")()
                 else:
                     _pv.pop("depends_on")
-                    if verbose:
+                    if warnings:
                         warn("Cannot build the dependance as it is not comming from 'prospect.models.transforms' package.")
         return _model
     
@@ -963,9 +965,10 @@ class Prospector():
         print(tools.get_box_title(title="Prior descriptions", box="\n#=#\n#   {}   #\n#=#\n"))
         _prior_list = p_priors.__all__.copy()
         _prior_list.remove("Prior")
-        print("Available priors: {}.\n".format(", ".join(_prior_list)))
+        print(f"Available priors: {', '.join(_prior_list)}.\n")
         if priors is not None:
-            print("(Required arguments must be included in addition with the 'name' argument in a dictionary to correctly build the prior, \n"+
+            print("(Required arguments must be included in addition with the 'name' argument in a "+
+                  "dictionary to correctly build the prior, \n"+
                   " for example, try to describe 'priors={'name':'Normal', 'mean':0., 'sigma':1.}').\n")
             if priors in ["*", "all"]:
                 priors = _prior_list
@@ -973,14 +976,14 @@ class Prospector():
             for _p in _priors:
                 _name = _p.pop("name") if type(_p) == dict else _p
                 if _name not in _prior_list:
-                    warn("'{}' is not an available prior.".format(_name))
+                    warn(f"'{_name}' is not an available prior.")
                     continue
                 print(tools.get_box_title(title=_name, box="\n+-+\n|   {}   |\n+-+\n"))
                 _pdoc = eval("p_priors."+_name).__doc__
                 _pdoc = _pdoc.replace(":param", "-")
                 if type(_p) == dict:
                     for _pp in eval("p_priors."+_name).prior_params:
-                        _pdoc = _pdoc.replace(_pp+":", _pp+": (your input is: {})".format(_p[_pp]) if _pp in _p.keys()
+                        _pdoc = _pdoc.replace(_pp+":", _pp+f": (your input is: {_p[_pp]})" if _pp in _p.keys()
                                                   else _pp+": (!!!WARNING!!! No input!)")
                 print(_pdoc)
     
