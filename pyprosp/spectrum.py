@@ -516,7 +516,7 @@ class ProspectorSpectrum():
         _spec_data = self.get_spectral_data(restframe=restframe, exp=exp, unit="AA", lbda_lim=(None, None))
         return tools.synthesize_photometry(_spec_data["lbda"], _spec_data["spec_chain"], filter_lbda, filter_trans, normed=True)
     
-    def get_phot_data(self, filters=None, restframe=False, exp=3, unit="mag", plot_format=True):
+    def get_phot_data(self, filters=None, restframe=False, exp=3, unit="mag", plot_format=False):
         """
         Build and return a dictionary containing photometry data extracted from the fitted spectrum.
         
@@ -551,7 +551,7 @@ class ProspectorSpectrum():
         -------
         plot_format : [bool]
             Returning dictionary format choice.
-            If True, return a convient format for plots:
+            If True, return a convenient format for plots:
                 - "lbda": the wavelength array of the filters
                 - "phot_chains": the extracted photometry chains
                 - "phot": the extracted photometry chain medians
@@ -562,6 +562,7 @@ class ProspectorSpectrum():
                 - _filter: {"lbda": the wavelength array of the _filter
                             "phot_chain": the extracted photometry chains
                             "phot": the extracted photometry (median, -sigma, +sigma)}
+            Default is False.
         
         
         Returns
@@ -572,8 +573,12 @@ class ProspectorSpectrum():
         _phot_chains = {_f:self.get_synthetic_photometry(filter=_f, restframe=restframe, unit=unit, exp=exp) for _f in _filternames}
         _lbda = np.array([_phot_chains[_f][0] for _f in _filternames])
         _phot_chains = np.array([_phot_chains[_f][1] for _f in _filternames])
-        _phot_low, _phot, _phot_up = np.array([np.percentile(_pc, [16, 50, 84]) for _pc in _phot_chains]).T
-        dict_out = {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, "filters":_filternames}
+        try:
+            _phot_low, _phot, _phot_up = np.array([np.percentile(_pc, [16, 50, 84]) for _pc in _phot_chains]).T
+        except ValueError:
+            _phot_low, _phot, _phot_up = np.array([[]]*3)
+        dict_out = {"lbda":_lbda, "phot_chains":_phot_chains, "phot":_phot, "phot_low":_phot_low, "phot_up":_phot_up, 
+                    "filters":_filternames}
         if plot_format:
             return dict_out
         else:
@@ -584,7 +589,7 @@ class ProspectorSpectrum():
                                 dict_out["phot_up"][ii]-dict_out["phot"][ii])}
                     for ii, _f in enumerate(dict_out["filters"])}
     
-    def get_phot_obs(self, filters=None, unit="mag"):
+    def get_phot_obs(self, filters=None, unit="mag", plot_format=False):
         """
         Build and return a dictionary containing photometry data used for SED fitting.
         The dictionary contains:
@@ -612,23 +617,46 @@ class ProspectorSpectrum():
                 - "mag": magnitude
             Default is "Hz".
         
+        Options
+        -------
+        plot_format : [bool]
+            Returning dictionary format choice.
+            If True, return a convenient format for plots:
+                - "lbda": the wavelength array of the filters
+                - "phot": measured photometry
+                - "phot_unc": photometry uncertainty
+                - "filters": the filters names
+            If False, the returned dictionary is user friendly:
+                (for each _filter in the given 'filters')
+                - _filter: {"lbda": the wavelength array of the _filter
+                            "phot": measured photometry
+                            "phot_unc": photometry uncertainty}
+            Default is False.
+        
         
         Returns
         -------
         dict
         """
         _filternames, _filt_idx = self._get_filternames_(filters, self.obs, return_idx=True)
-        _filters = np.array(self.obs["filters"])[_filt_idx]
+        _filters = np.array(self.obs["filters"] if self.obs["filters"] is not None else [])[_filt_idx]
         _lbda = np.array([_f.wave_average for _f in _filters])
-        _phot = np.array(self.obs["maggies"])[_filt_idx]
-        _phot_unc = np.array(self.obs["maggies_unc"])[_filt_idx]
+        _phot = np.array(self.obs["maggies"] if self.obs["maggies"] is not None else [])[_filt_idx]
+        _phot_unc = np.array(self.obs["maggies_unc"] if self.obs["maggies_unc"] is not None else [])[_filt_idx]
         _unit_in = "mgy"
         
         # Change unit
         _phot, _phot_unc = tools.convert_unit(data=_phot, data_unc=_phot_unc, unit_in=_unit_in,
                                               unit_out=("AA" if unit=="mag" else unit), wavelength=_lbda)
         
-        return {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc, "filters":_filternames}
+        dict_out = {"lbda":_lbda, "phot":_phot, "phot_unc":_phot_unc, "filters":_filternames}
+        if plot_format:
+            return dict_out
+        else:
+            return {_f:{"lbda":dict_out["lbda"][ii],
+                        "phot":dict_out["phot"][ii],
+                        "phot_unc":dict_out["phot_unc"][ii]}
+                    for ii, _f in enumerate(dict_out["filters"])}
     
     @staticmethod
     def _get_filternames_(filters, obs, return_idx=False):
@@ -659,21 +687,27 @@ class ProspectorSpectrum():
         -------
         np.array
         """
+        try:
+            _filternames = obs["filternames"].copy()
+        except KeyError:
+            _filternames = []
+            if filters in ["mask", "~mask"]:
+                filters = None
         if filters is None:
-            _filters = io.pysed_to_filters(obs["filternames"])
+            _filters = io.pysed_to_filters(_filternames)
         elif filters == "mask":
-            _filters = io.pysed_to_filters(obs["filternames"])[obs["phot_mask"]]
+            _filters = io.pysed_to_filters(_filternames)[obs["phot_mask"]]
         elif filters == "~mask":
-            _filters = io.pysed_to_filters(obs["filternames"])[~obs["phot_mask"]]
+            _filters = io.pysed_to_filters(_filternames)[~obs["phot_mask"]]
         else:
             _filters = np.atleast_1d(filters)
             try:
-                _filters = io.pysed_to_filters([(_f if _f in obs["filternames"] else io.filters_to_pysed(_f)[0]) for _f in _filters])
+                _filters = io.pysed_to_filters([(_f if _f in _filternames else io.filters_to_pysed(_f)[0]) for _f in _filters])
             except KeyError:
                 raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
                                  "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
         if return_idx:
-            _filt_idx = [np.where(np.array(obs["filternames"]) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
+            _filt_idx = [np.where(np.array(_filternames) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
             return _filters, _filt_idx
         return _filters
     
@@ -681,10 +715,14 @@ class ProspectorSpectrum():
     #   Plotting   #
     #--------------#
     def show(self, ax=None, figsize=(10,6), ax_rect=[0.1, 0.2, 0.8, 0.7], unit="Hz", restframe=False,
-             lbda_lim=(1e3, 1e5), spec_prop={"c":"k", "lw":0.5, "zorder":4}, spec_unc_prop={"color":"0.7", "alpha":0.35, "lw":0, "zorder":2},
+             lbda_lim=(1e3, 1e5), spec_prop={"c":"k", "lw":0.5, "zorder":4}, 
+             spec_unc_prop={"color":"0.7", "alpha":0.35, "lw":0, "zorder":2},
              filters=None, phot_prop={"marker":"o", "s":60, "fc":"xkcd:azure", "ec":"b", "zorder":6},
              phot_unc_prop={"marker":"", "ls":"None", "ecolor":"C0", "zorder":5},
-             show_obs={"marker":"s", "ms":7, "ls":"None", "mfc":"r", "mec":"b", "ecolor":"0.7", "zorder":4},
+             obs_spec_prop={},
+             obs_spec_unc_prop={},
+             obs_phot_prop={"marker":"s", "ms":7, "ls":"None", "mfc":"r", "mec":"b", "zorder":4},
+             obs_phot_unc_prop={"marker":"", "ls":"None", "ecolor":"0.7", "zorder":3},
              show_legend={"loc":"best", "frameon":False, "labelspacing":0.8}, set_logx=True, set_logy=True,
              show_filters={"lw":1.5, "color":"gray", "alpha":0.7, "zorder":1}, savefile=None):
         """
@@ -724,14 +762,14 @@ class ProspectorSpectrum():
             Default is (None, None).
         
         spec_prop : [dict or None]
-            Spectrum pyplot.plot kwargs.
+            Fitted spectrum pyplot.plot kwargs.
             If bool(spec_prop) == False, the spectrum is not plotted.
-            Default is {}.
+            Default is {"c":"k", "lw":0.5, "zorder":4}.
         
         spec_unc_prop : [dict or None]
-            Spectrum uncertainties pyplot.fill_between kwargs.
+            Fitted spectrum uncertainties pyplot.fill_between kwargs.
             If bool(spec_unc_prop) == False, the uncertainties are not plotted.
-            Default is {}.
+            Default is {"color":"0.7", "alpha":0.35, "lw":0, "zorder":2}.
         
         filters : [string or list(string) or None]
             List of filters from which to get the photometry.
@@ -743,22 +781,37 @@ class ProspectorSpectrum():
         phot_prop : [dict or None]
             Photometry pyplot.scatter kwargs.
             If bool(phot_prop) == False, the photometric points are not plotted.
-            Default is {}.
+            Default is {"marker":"o", "s":60, "fc":"xkcd:azure", "ec":"b", "zorder":6}.
         
         phot_unc_prop : [dict or None]
             Photometry uncertainties pyplot.errorbar kwargs.
             If bool(phot_unc_prop) == False, the photometric uncertainties are not plotted.
+            Default is {"marker":"", "ls":"None", "ecolor":"C0", "zorder":5}.
+        
+        obs_spec_prop : [dict or None]
+            Observed spectrum pyplot.errorbar kwargs.
+            If bool(obs_spec_prop) == False, the observed spectrum is not plotted.
             Default is {}.
         
-        show_obs : [dict or None]
+        obs_spec_unc_prop : [dict or None]
+            Observed spectrum uncertainties pyplot.errorbar kwargs.
+            If bool(obs_spec_unc_prop) == False, the observed spectrum uncertainties are not plotted.
+            Default is {}.
+        
+        obs_phot_prop : [dict or None]
+            Observed photometry pyplot.scatter kwargs.
+            If bool(show_obs) == False, the observed photometric points are not plotted.
+            Default is {"marker":"s", "ms":7, "ls":"None", "mfc":"r", "mec":"b", "zorder":4}.
+        
+        obs_phot_unc_prop : [dict or None]
             Observed photometry uncertainties pyplot.errorbar kwargs.
             If bool(show_obs) == False, the observed photometric points are not plotted.
-            Default is {}.
+            Default is {"marker":"", "ls":"None", "ecolor":"0.7", "zorder":3}.
         
         show_legend : [dict or None]
             pyplot.legend kwargs.
             If bool(show_legend) == False, the legend is not plotted.
-            Default is {}.
+            Default is {"loc":"best", "frameon":False, "labelspacing":0.8}.
         
         set_logx, set_logy : [bool]
             If True, set the corresponding axis in log scale.
@@ -767,7 +820,7 @@ class ProspectorSpectrum():
         show_filters : [dict or None]
             Filters' transmission pyplot.plot kwargs.
             If bool(show_filters) == False, the filters' transmission are not plotted.
-            Default is {}.
+            Default is {"lw":1.5, "color":"gray", "alpha":0.7, "zorder":1}.
         
         savefile : [string or None]
             Give a directory to save the figure.
@@ -788,60 +841,90 @@ class ProspectorSpectrum():
         
         _handles = []
         _labels = []
+        
         # SED
         _h_spec = []
-        _l_spec = []
         if spec_prop:
             _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
-            ax.plot(_spec_data["lbda"], _spec_data["spec"], **spec_prop)
-            _h_spec.append(mlines.Line2D([], [], **spec_prop))
-            _l_spec.append("Fitted spectrum")
+            if len(_spec_data["lbda"]) > 0:
+                ax.plot(_spec_data["lbda"], _spec_data["spec"], **spec_prop)
+                _h_spec.append(mlines.Line2D([], [], **spec_prop))
         if spec_unc_prop:
             if "_spec_data" not in locals():
                 _spec_data = self.get_spectral_data(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
-            _h_spec.insert(0, ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop))
-            _l_spec.append(r"1-$\sigma$ spectrum confidence")
-        if _h_spec and _l_spec:
+            if len(_spec_data["lbda"]) > 0:
+                _h_spec.insert(0, ax.fill_between(_spec_data["lbda"], _spec_data["spec_low"], _spec_data["spec_up"], **spec_unc_prop))
+        if _h_spec:
             _handles.append(tuple(_h_spec))
-            _labels.append("\n".join(_l_spec))
+            _labels.append("Fitted spectrum")
+        
+        _h_obs_spec = []
+        _h_obs_spec_mask = []
+        if obs_spec_prop:
+            _spec_obs = self.get_spectral_obs(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
+            if len(_spec_obs["lbda"]) > 0:
+                ax.plot(_spec_obs["lbda"], _spec_obs["spec"], **obs_spec_prop)
+                _h_obs_spec.append(mlines.Line2D([], [], **obs_spec_prop))
+        if obs_spec_unc_prop:
+            if "_spec_obs" not in locals():
+                _spec_obs = self.get_spectral_obs(restframe=restframe, unit=unit, lbda_lim=lbda_lim)
+            if len(_spec_data["lbda"]) > 0:
+                _h_obs_spec.insert(0, ax.fill_between(_spec_obs["lbda"], _spec_obs["spec"] - _spec_obs["spec_unc"], 
+                                                      _spec_obs["spec"] + _spec_obs["spec_unc"], **spec_unc_prop))
+        if _h_obs_spec:
+            _handles.append(tuple(_h_obs_spec))
+            _labels.append("Observed spectrum")
+        if _h_obs_spec_mask:
+            _handles.append(tuple(_h_obs_spec_mask))
+            _labels.append("Observed spectrum\n(not used for SED fitting)")
         
         # Photometry
         _h_phot = []
-        _l_phot = []
         if phot_prop:
-            _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            _h_phot.append(ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop))
-            _l_phot.append("Fitted photometry")
+            _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit, plot_format=True)
+            if len(_phot_data["lbda"]) > 0:
+                _h_phot.append(ax.scatter(_phot_data["lbda"], _phot_data["phot"], **phot_prop))
         if phot_unc_prop:
             if "_phot_data" not in locals():
-                _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit)
-            _h_phot.insert(0, ax.errorbar(_phot_data["lbda"], _phot_data["phot"],
-                                          yerr=[_phot_data["phot"]-_phot_data["phot_low"],
-                                                _phot_data["phot_up"]-_phot_data["phot"]],
-                                          **phot_unc_prop))
-            _l_phot.append(r"1-$\sigma$ photometry confidence")
-        if _h_phot and _l_phot:
+                _phot_data = self.get_phot_data(filters=filters, restframe=restframe, unit=unit, plot_format=True)
+            if len(_phot_data["lbda"]) > 0:
+                _h_phot.insert(0, ax.errorbar(_phot_data["lbda"], _phot_data["phot"],
+                                              yerr=[_phot_data["phot"]-_phot_data["phot_low"],
+                                                    _phot_data["phot_up"]-_phot_data["phot"]],
+                                              **phot_unc_prop))
+        if _h_phot:
             _handles.append(tuple(_h_phot))
-            _labels.append("\n".join(_l_phot))
+            _labels.append("Fitted photometry")
         
-        if show_obs:
-            _phot_obs = self.get_phot_obs(filters="mask", unit=unit)
-            _handles.append(ax.errorbar(_phot_obs["lbda"], _phot_obs["phot"], yerr=_phot_obs["phot_unc"], **show_obs))
-            _labels.append("Observed photometry")
-            _phot_obs_mask = self.get_phot_obs(filters="~mask", unit=unit)
+        _h_obs_phot = []
+        _h_obs_mask_phot = []
+        if obs_phot_prop:
+            _phot_obs = self.get_phot_obs(filters="mask", unit=unit, plot_format=True)
+            if len(_phot_obs["lbda"]) > 0:
+                _h_obs_phot.append(ax.scatter(_phot_obs["lbda"], _phot_obs["phot"], **obs_phot_prop))
+            _phot_obs_mask = self.get_phot_obs(filters="~mask", unit=unit, plot_format=True)
             if len(_phot_obs_mask["lbda"]) > 0:
-                _show_obs_mask = show_obs.copy()
-                _show_obs_mask["alpha"] = _show_obs_mask["alpha"] * 0.3 if "alpha" in _show_obs_mask else 0.3
-                _handles.append(ax.errorbar(_phot_obs_mask["lbda"], _phot_obs_mask["phot"],
-                                            yerr=_phot_obs_mask["phot_unc"], **_show_obs_mask))
-                _labels.append("Observed photometry\n(not used for SED fitting)")
-            
-        ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
-        ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
-        if set_logx:
-            ax.set_xscale("log")
-        if set_logy:
-            ax.set_yscale("log")
+                _obs_phot_mask_prop = obs_phot_prop.copy()
+                _obs_phot_mask_prop["alpha"] = _obs_phot_mask_prop["alpha"] * 0.3 if "alpha" in _obs_phot_mask_prop else 0.3
+                _h_obs_mask_phot.append(ax.scatter(_phot_obs_mask["lbda"], _phot_obs_mask["phot"], **_obs_phot_mask_prop))
+        if obs_phot_unc_prop:
+            if "_phot_obs" not in locals():
+                _phot_obs = self.get_phot_obs(filters="mask", unit=unit, plot_format=True)
+            if len(_phot_obs["lbda"]) > 0:
+                _h_obs_phot.insert(0, ax.errorbar(_phot_obs["lbda"], _phot_obs["phot"], yerr=_phot_obs["phot_unc"], **obs_phot_prop))
+            if "_phot_obs_mask" not in locals():
+                _phot_obs_mask = self.get_phot_obs(filters="~mask", unit=unit, plot_format=True)
+            if len(_phot_obs_mask["lbda"]) > 0:
+                _obs_phot_unc_mask_prop = obs_phot_unc_prop.copy()
+                _obs_phot_unc_mask_prop["alpha"] = _obs_phot_unc_mask_prop["alpha"] * 0.3 if "alpha" in _obs_phot_unc_mask_prop else 0.3
+                _h_obs_mask_phot.insert(0, ax.errorbar(_phot_obs_mask["lbda"], _phot_obs_mask["phot"],
+                                                       yerr=_phot_obs_mask["phot_unc"], **_obs_phot_unc_mask_prop))
+        if _h_obs_phot:
+            _handles.append(tuple(_h_obs_phot))
+            _labels.append("Observed photometry")
+        if _h_obs_mask_phot:
+            _handles.append(tuple(_h_obs_mask_phot))
+            _labels.append("Observed photometry\n(not used for SED fitting)")
         
         if show_filters:
             _filternames, _filt_idx = self._get_filternames_(filters, self.obs, return_idx=True)
@@ -859,6 +942,14 @@ class ProspectorSpectrum():
                     _y_f = 0.35 * (_ymax - _ymin) * 0.03 + _ymin
                 ax.text(_f.wave_average, _y_f, _filternames[ii], ha="center", va="bottom", rotation="vertical", fontsize="small")
                 ax.plot(_w, _t, **show_filters)
+        
+        # Format
+        ax.set_xlabel(r"wavelentgh [$\AA$]", fontsize="large")
+        ax.set_ylabel(f"{'magnitude' if unit=='mag' else 'flux'} [{tools.get_unit_label(unit)}]", fontsize="large")
+        if set_logx:
+            ax.set_xscale("log")
+        if set_logy:
+            ax.set_yscale("log")
         
         if show_legend:
             ax.legend(_handles, _labels, **show_legend)
