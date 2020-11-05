@@ -185,11 +185,12 @@ class Prospector():
             If None, no mask is applied.
             Default is None.
         
-        spec_mask : [tuple(float or None, float or None) or None]
+        spec_mask : [tuple(float or None, float or None) or np.array or None]
             Give a tuple of two wavelength in AA (lower_limit, upper_limit) to run 
             the SED fitting on the input spectrum between the given limits.
             The rest of the spectrum is masked.
             You can give None for a limit to keep the whole spectrum in that direction.
+            You also can directly give your own mask array.
             If None, the whole spectrum is fitted.
             Default is None.
         
@@ -234,7 +235,7 @@ class Prospector():
                               "spectrum":np.array(self.spec_in["spec"]),
                               "unc":np.array(self.spec_in["spec.err"]) if "spec.err" in self.spec_in.keys() else None})
             if spec_mask is not None:
-                if isinstance(spec_mask, tuple) and len(spec_mask) == 2:
+                if type(spec_mask) in [list, tuple, np.ndarray] and len(spec_mask) == 2:
                     _lim_low, _lim_up = spec_mask
                     _spec_mask = np.ones(len(self.obs["wavelength"]), dtype = bool)
                     if _lim_low is not None:
@@ -242,6 +243,8 @@ class Prospector():
                     if _lim_up is not None:
                         _spec_mask &= self.obs["wavelength"] < _lim_up
                     self._obs["mask"] = _spec_mask
+                elif type(spec_mask) in [list, tuple, np.ndarray] and len(spec_mask)==len(self.spec_in["lbda"]):
+                    self._obs["mask"] = np.array(spec_mask)
                 else:
                     if warnings:
                         warn(f"Cannot apply a mask on spectrum because the 'spec_mask' you give is not compliant ({spec_mask})")
