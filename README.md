@@ -19,6 +19,7 @@ The best way to learn how to use this module is probably to follow the notebook 
 notebooks/how_to_use_pyprosp.ipynb
 ```
 This notebook is a fully detailed tutorial on how to use `pyprosp`.
+In addition, you can find at the same place a shorten version of the tutorial resuming the very useful commands, ready to be duplicated and used with your own data.
 
 The main goal of this module is to provide a ready to use code using `prospector` package. <br>
 In theory, you just need your own data to apply a SED fitting on, give them to `pyprosp`, execute a few commands with specific arguments and that's it!

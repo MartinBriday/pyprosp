@@ -492,7 +492,32 @@ class ProspectorSpectrum():
         return _mask_lbda
     
     @staticmethod
-    def _build_obs_spec_mask_(obs, lbda=None, lbda_lim=(None, None)):
+    def _build_obs_spec_mask_(obs, lbda=None, lbda_lim="mask"):
+        """
+        Build and return a boolean array to apply a mask on the observed spectrum.
+        
+        Parameters
+        ----------
+        obs : [dict]
+            Prospector compatible 'obs' dictionary.
+        
+        lbda : [np.array or None]
+            Wavelength array to apply the boundaries on.
+            If None, 'lbda_lim' is expected to be either "mask" or "~mask".
+            Default is None.
+        
+        lbda_lim : [tuple(float or None, float or None)]
+            Limits on wavelength (thus in AA) to mask the spectrum.
+            None for a limit means that the spectrum is not masked in the corresponding direction.
+            If you give "mask", return a tuple of dictionaries corresponding to the mask used for SED fitting.
+            If you give "~mask", return a tuple of dictionaries corresponding to the inversed mask used for SED fitting.
+            Default is "mask".
+        
+        
+        Returns
+        -------
+        np.array
+        """
         _spec_mask = ProspectorSpectrum._build_spec_mask_(lbda, lbda_lim)
         try:
             _spec_mask = obs["mask"]
