@@ -421,26 +421,7 @@ class ProspectorSpectrum():
         _spec_err = tools.convert_flux_unit(_spec_err, _unit_in, unit, wavelength=_lbda)
         
         #Build mask
-        _spec_mask = self._build_spec_mask_(_lbda, lbda_lim)
-        try:
-            _spec_mask = self.obs["mask"]
-            if lbda_lim == "mask":
-                _spec_mask = np.where(_spec_mask)[0]
-            elif lbda_lim == "~mask":
-                _spec_mask = np.where(~_spec_mask)[0]
-            else:
-                raise AttributeError()
-            _spec_mask = np.split(_spec_mask, np.where(np.diff(_spec_mask) != 1)[0] + 1)
-            for ii, _sm in enumerate(_spec_mask):
-                if len(_sm) > 0:
-                    if _sm[0] != 0:
-                        _spec_mask[ii] = np.insert(_sm, 0, _sm[0]-1)
-                    if _sm[-1] != len(_lbda) - 1:
-                        _spec_mask[ii] = np.append(_sm, _sm[-1]+1)
-        except AttributeError:
-            pass
-        except KeyError:
-            pass
+        _spec_mask = self._build_obs_spec_mask_(self.obs, _lbda, lbda_lim)
         
         if isinstance(_spec_mask[0], np.ndarray):
             return [{"lbda":_lbda[_sm], "spec":_spec[_sm], "spec_err":_spec_err[_sm]} for _sm in _spec_mask]
@@ -509,6 +490,37 @@ class ProspectorSpectrum():
             if _lim_up is not None:
                 _mask_lbda &= lbda < _lim_up
         return _mask_lbda
+    
+    @staticmethod
+    def _build_obs_spec_mask_(obs, lbda=None, lbda_lim=(None, None)):
+        _spec_mask = ProspectorSpectrum._build_spec_mask_(lbda, lbda_lim)
+        try:
+            _spec_mask = obs["mask"]
+            if lbda_lim == "mask":
+                _spec_mask = np.where(_spec_mask)[0]
+            elif lbda_lim == "~mask":
+                _spec_mask = np.where(~_spec_mask)[0]
+            else:
+                raise AttributeError()
+            _spec_mask = np.split(_spec_mask, np.where(np.diff(_spec_mask) != 1)[0] + 1)
+            for ii, _sm in enumerate(_spec_mask.copy()):
+                if len(_sm) > 0:
+                    if _sm[0] != 0 and (lbda_lim == "mask" 
+                                        and (_sm[0] != (_spec_mask[ii-1][-1] + 2) if ii > 0 else True) 
+                                        or len(_spec_mask[ii]) == 1):
+                        _sm = np.insert(_sm, 0, _sm[0]-1)
+                    if _sm[-1] != (len(obs["mask"]) - 1) and (lbda_lim == "mask" 
+                                                              and (_sm[-1] != (_spec_mask[ii+1][0] - 2) 
+                                                                   if ii < (len(_spec_mask) - 1)
+                                                                   else True)
+                                                              or len(_spec_mask[ii]) == 1):
+                        _sm = np.append(_sm, _sm[-1]+1)
+                    _spec_mask[ii] = _sm
+        except AttributeError:
+            pass
+        except KeyError:
+            pass
+        return _spec_mask
     
     #----------------#
     #   Photometry   #
