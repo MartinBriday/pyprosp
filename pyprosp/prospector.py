@@ -679,7 +679,7 @@ class Prospector():
         from .phys_params import ProspectorPhysParams
         self._phys_params = ProspectorPhysParams(chains=self.chains, model=self.model)
     
-    def write_h5(self, savefile):
+    def write_h5(self, savefile, warning=True):
         """
         Save the fitting results and every fitter inputs (apart from the 'sps') in a given file.
         
@@ -687,6 +687,14 @@ class Prospector():
         ----------
         savefile : [string]
             File name in which to save the results.
+            Must be an hdf5 file (thus ending with ".h5").
+            If the file already exists, add the day and time before ".h5" in file name.
+        
+        Options
+        -------
+         warnings : [bool]
+            If True, allow warnings to be printed.
+            Default is True.
         
         
         Returns
@@ -695,6 +703,11 @@ class Prospector():
         """
         import h5py
         import pickle
+        
+        if os.path.isfile(savefile):
+            _savefile, savefile = savefile, savefile.replace(".h5", f"_{io.get_now()}.h5")
+            if warning:
+                warn(f"The file {_savefile} is already existing. Writing results in: {savefile}")
         
         from prospect.io import write_results as writer
         writer.write_hdf5(hfile=savefile, run_params=self.run_params, model=self.model, obs=self.obs,

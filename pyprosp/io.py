@@ -5,6 +5,7 @@ import time
 import sys
 import os
 from warnings import warn
+from datetime import datetime
 
 from . import tools
 
@@ -267,4 +268,23 @@ def load_spec(spec, unit):
         _out["spec.err"] = tools.convert_flux_unit(flux=_dspec, unit_in=unit, unit_out="mgy", wavelength=_lbda)
     
     return _out
+
+def get_now(format="%Y%m%d_%H%M%S"):
+    """ 
+    Return a string filled with the current day and time.
+    
+    Parameters
+    ----------
+    format : [string]
+        Format with which returning the current time.
+        See e.g. https://www.tutorialspoint.com/python/time_strftime.htm for the format.
+    
+    
+    Returns
+    -------
+    string
+    """
+    return datetime.now().strftime(format)
+
+
     
