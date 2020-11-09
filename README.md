@@ -3,7 +3,7 @@ Ready to use SED fitting code using `prospector` package.
 Allow basic k-corrections.
 
 # Installation
-You first need to follow the full `prospector` installation (see https://github.com/bd-j/prospector).
+You first need to follow the full `prospector` installation (see https://github.com/bd-j/prospector/blob/main/doc/installation.rst).
 
 Then:
 ```
