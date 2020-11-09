@@ -597,8 +597,12 @@ class ProspectorSpectrum():
             filter = io.filters_to_pysed(filter)[0]
         except:
             pass
-        if filter in self.obs["filternames"]:
-            _filter = self.obs["filters"][self.obs["filternames"].index(filter)]
+        if isinstance(filter, str):
+            try:
+                _filter = self.obs["filters"][self.obs["filternames"].index(filter)]
+            except KeyError:
+                from sedpy.observate import load_filters
+                _filter = load_filters([filter])[0]
             _lbda, _trans = tools.fix_trans(_filter.wavelength, _filter.transmission)
             _bp = bandpasses.Bandpass(_lbda, _trans)
         elif type(filter) == bandpasses.Bandpass:
@@ -836,7 +840,10 @@ class ProspectorSpectrum():
                 raise ValueError(f"One or more of the given filters are not available \n(filters = {filters}).\n"+
                                  "They must be like 'instrument.band' (eg: 'sdss.u') or prospector compatible filter names.")
         if return_idx:
-            _filt_idx = [np.where(np.array(_filternames) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
+            try:
+                _filt_idx = [np.where(np.array(_filternames) == _f)[0][0] for _f in io.filters_to_pysed(_filters)]
+            except IndexError:
+                _filt_idx = []
             return _filters, _filt_idx
         return _filters
     
@@ -1098,9 +1105,11 @@ class ProspectorSpectrum():
             ax.legend(_handles, _labels, **show_legend)
         
         if show_filters:
-            _filternames, _filt_idx = self._get_filternames_(filters, self.obs, return_idx=True)
+            _filternames = self._get_filternames_(filters, self.obs, return_idx=False)
             if len(_filternames) > 0:
-                _filters = np.array(self.obs["filters"])[_filt_idx]
+                from sedpy.observate import load_filters
+                from . import io
+                _filters = np.array(load_filters(io.filters_to_pysed(_filternames)))
                 _ymin, _ymax = ax.get_ylim()
                 ax.set_ylim(_ymin, _ymax)
                 for ii, _f in enumerate(_filters):
