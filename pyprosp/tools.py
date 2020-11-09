@@ -301,7 +301,11 @@ def fix_trans(lbda, trans):
     np.array, np.array
     """
     _lbda, _trans = np.array(lbda).copy(), np.array(trans).copy()
-    _lbda_step = np.mean([_lbda[ii+1] - _l for ii, _l in enumerate(_lbda[:-1])])
+    _lbda_diff0 = np.where(np.ediff1d(_lbda) == 0.)[0]
+    _lbda_step = np.mean(np.ediff1d(_lbda))
+    if len(_lbda_diff0) > 0:
+        _lbda = np.delete(_lbda, _lbda_diff0)
+        _trans = np.delete(_trans, _lbda_diff0)
     if _trans[0] != 0:
         _lbda = np.insert(_lbda, 0, _lbda[0]-_lbda_step)
         _trans = np.insert(_trans, 0, 0.)
