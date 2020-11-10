@@ -118,7 +118,7 @@ class ProspectorPhysParams():
         -------
         bool
         """
-        return (param in self.param_chains) if self._has_param_(param) else False
+        return param in self.theta_labels
     
     def _is_param_dependant_(self, param):
         """
@@ -184,6 +184,8 @@ class ProspectorPhysParams():
         """
         if self._has_param_(param):
             return self.model_dict[param].get("N", default)
+        elif self._is_param_free_(param):
+            return 1
         else:
             raise KeyError(f"'{param}' is not in the model.")
     
@@ -231,7 +233,7 @@ class ProspectorPhysParams():
         array
         """
         _n = self._get_param_N_(param)
-        if self._is_param_free_(param):
+        if self._is_param_free_(param) or (self._has_param_(param) and self.model_dict[param].get("isfree", False)):
             return self.param_chains[param] if _n == 1 else \
                    np.array([self.param_chains[f"{param}_{ii+1}"] for ii in np.arange(_n)])
         else:
@@ -289,15 +291,15 @@ class ProspectorPhysParams():
         """
         if self.has_agebins():
             _mass = self.get_mass()
-            _agebins = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["agebins"]]
+            _agebins = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["agebins"]]["init"]
             if self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"]):
                 _z_fraction = self._get_param_chain_(io._DEFAULT_NON_PARAMETRIC_SFH["z_fraction"])
                 _sfr = [transforms.zfrac_to_sfr(total_mass=_mass[ii], z_fraction=_z_fraction.T[ii], agebins=_agebins)[0]
                         for ii in np.arange(self.len_chains)]
             elif self._has_param_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]):
-                _logsfr_ratios = self.model_dict[io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"]]["init"]
+                _logsfr_ratios = self._get_param_chain_(io._DEFAULT_NON_PARAMETRIC_SFH["logsfr_ratios"])
                 _logmass = np.log10(_mass)
-                _sfr = [transforms.zfrac_to_sfr(logmass=_logmass, logsfr_ratios=_logsfr_ratios.T[ii], agebins=_agebins)[0]
+                _sfr = [transforms.logsfr_ratios_to_sfrs(logmass=_logmass, logsfr_ratios=_logsfr_ratios.T[ii], agebins=_agebins)[0]
                         for ii in np.arange(self.len_chains)]
             else:
                 _sfr = None
