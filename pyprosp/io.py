@@ -33,6 +33,10 @@ _DEFAULT_FILTER_CONFIG = {"sdss":{_f:f"sdss_{_f}0" for _f in ["u", "g", "r", "i"
                           "wise":{_f:f"wise_{_f}" for _f in ["w1", "w2", "w3", "w4"]},
                           }
 
+_DEFAULT_FILTER_TRANS_COEF = {"galex":1e-2, 
+                              "stromgren":1e-2, 
+                              "2mass":1e4}
+
 _DEFAULT_PHYS_PARAMS = {"z":{"prosp_name":"zred",
                              "label":"", 
                              "unit":"",

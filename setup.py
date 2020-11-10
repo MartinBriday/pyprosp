@@ -11,7 +11,7 @@ MAINTAINER_EMAIL = 'briday@ipnl.in2p3.fr'
 URL = 'https://github.com/MartinBriday/pyprosp'
 LICENSE = 'Apache 2.0'
 DOWNLOAD_URL = 'https://github.com/MartinBriday/pyprosp'
-VERSION = '1.0.5'
+VERSION = '1.0.6'
 
 try:
     from setuptools import setup, find_packages

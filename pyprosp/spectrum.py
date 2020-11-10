@@ -600,7 +600,7 @@ class ProspectorSpectrum():
         if isinstance(filter, str):
             try:
                 _filter = self.obs["filters"][self.obs["filternames"].index(filter)]
-            except KeyError:
+            except (KeyError, ValueError):
                 from sedpy.observate import load_filters
                 _filter = load_filters([filter])[0]
             _lbda, _trans = tools.fix_trans(_filter.wavelength, _filter.transmission)
@@ -1114,7 +1114,7 @@ class ProspectorSpectrum():
                 ax.set_ylim(_ymin, _ymax)
                 for ii, _f in enumerate(_filters):
                     _w, _t = tools.fix_trans(_f.wavelength, _f.transmission)
-                    _t = _t*(1./100. if _t.max() > 1. else 1.)
+                    _t = _t * io._DEFAULT_FILTER_TRANS_COEF.get(_filternames[ii].split(".")[0], 1)
                     if set_logy:
                         _t = 10**(0.25*(np.log10(_ymax/_ymin))) * _t * _ymin + _ymin
                         _y_f = 10**(0.25*(np.log10(_ymax/_ymin))) * 0.03 * _ymin + _ymin
