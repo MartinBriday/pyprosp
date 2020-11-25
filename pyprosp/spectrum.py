@@ -181,7 +181,7 @@ class ProspectorSpectrum():
     #------------------#
     #   Spectrometry   #
     #------------------#
-    def load_spectra(self, from_file=None, size=None, savefile=None, warnings=True, **kwargs):
+    def load_spectra(self, from_file=None, size=None, force_it=True, savefile=None, warnings=True, **kwargs):
         """
         Build a dataframe of the spectrum chain and set it as attribute.
         
@@ -199,6 +199,11 @@ class ProspectorSpectrum():
             The parameter sets building the spectra are randomly chosen over the parameter chains.
             If None, the whole chains are used.
             Default is None.
+        
+        force_it : [bool]
+            If True, force the spectra loading, even if it already exist as attribute (if that so, replace the previous one).
+            If a 'savefile' is given, delete the previously saved spectrum chain array and replace it we this new one.
+            Default is True.
         
         savefile : [string or None]
             Save the built dataframe in the given file name.
@@ -218,16 +223,22 @@ class ProspectorSpectrum():
         -------
         Void
         """
+        if not force_it and self.has_spec_chain():
+            return
         if from_file:
             self._spec_chain = self.read_file(filename=from_file, warnings=warnings, **kwargs)
             return
         
-        if size is not None and isinstance(size, int):
+        if isinstance(size, int):
             if size > self.len_chains:
-                raise ValueError(f"'size' must lower than the number of fit steps (= {self.len_chains}) (your input: {size}).")
-            self._mask_chains = np.random.choice(self.len_chains, size, replace=False)
-        else:
-            self._mask_chains = None
+                if warnings:
+                    warn(f"You've given a 'size' bigger than the number of fit steps (= {self.len_chains}) (your input: {size}).\n"+
+                         "In that case, no mask is applied (the spectrum chain will be loaded on every fit steps).")
+                size = None
+            if size is not None:
+                self._mask_chains = np.random.choice(self.len_chains, size, replace=False)
+            else:
+                self._mask_chains = None
         _chains = self.chains[self.mask_chains] if self.has_mask_chains() else self.chains
         _spec_chain = np.array([self.get_theta_spec(theta=_theta, unit="mgy") for _theta in _chains])
         self._spec_chain = self._build_spec_chain_dataframe_(_spec_chain, self.wavelengths, warnings)
@@ -237,6 +248,7 @@ class ProspectorSpectrum():
     def write_spec(self, savefile, **kwargs):
         """
         Save the spectrum chain dataframe into a given file.
+        !!!This writing method replaces any previously saved spectrum chain, so be careful!!!
         
         Parameters
         ----------
@@ -1195,9 +1207,13 @@ class ProspectorSpectrum():
         else:
             return self.obs["wavelength"]
     
+    def has_spec_chain(self):
+        """ Test that the spectrum chain array is loaded """
+        return hasattr(self, "_spec_chain") and self._spec_chain is not None
+    
     @property
     def spec_chain(self):
         """ Array containing spectrum chain (unit is maggies: "mgy") """
-        if not hasattr(self, "_spec_chain") or self._spec_chain is None:
+        if not self.has_spec_chain():
             self.load_spectra()
         return self._spec_chain
