@@ -365,7 +365,7 @@ class Prospector():
         #Changes
         _describe_priors = []
         if changes is not None:
-            _model, _describe_priors = self._model_changes_(_model, changes)
+            _model, _describe_priors = self._model_changes_(_model, changes, warnings)
         if describe and len(_describe_priors) > 0:
             self.describe_priors(_describe_priors)
         
@@ -380,7 +380,7 @@ class Prospector():
         self._model = SedModel(_model)
     
     @staticmethod
-    def _model_changes_(model, changes, warnings=True):
+    def _model_changes_(model, changes, warnings):
         """
         Apply changes on model parameters.
         Return the modified model dictionary and the list of priors in 'changes' (useful for description).
