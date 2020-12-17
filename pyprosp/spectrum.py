@@ -53,7 +53,7 @@ class ProspectorSpectrum():
         if kwargs != {}:
             self.set_data(**kwargs)
     
-    def set_data(self, chains, model, obs, sps, filename=None, warnings=True, **kwargs):
+    def set_data(self, model, obs, sps, chains=None, filename=None, warnings=True, **kwargs):
         """
         Set up input data as attributes.
         
@@ -95,7 +95,8 @@ class ProspectorSpectrum():
         self._model = model
         self._obs = obs
         self._sps = sps
-        self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
+        if self.has_chains():
+            self._param_chains = {_p:np.array([jj[ii] for jj in self.chains]) for ii, _p in enumerate(self.theta_labels)}
         if filename:
             self._spec_chain = self.read_file(filename=filename, warnings=warnings, **kwargs)
     
@@ -1152,6 +1153,10 @@ class ProspectorSpectrum():
     def chains(self):
         """ List of the fitted parameter chains """
         return self._chains
+    
+    def has_chains(self):
+        """ Test that the chains exist """
+        return self.chains is not None
     
     @property
     def len_chains(self):

@@ -1227,12 +1227,11 @@ class Prospector():
         if not hasattr(self, "_spectrum"):
             if self.has_fit_output():
                 self.set_chains(data=self.fit_output, start=None)
-                self.load_spectrum()
             elif self.has_h5_results():
                 self.set_chains(data=self.h5_results, start=None)
-                self.load_spectrum()
             else:
-                raise AttributeError("You did not run the SED fit ('self.run_fit').")
+                warn("You did not run the SED fit ('self.run_fit').")
+            self.load_spectrum()
         return self._spectrum
     
     @property
